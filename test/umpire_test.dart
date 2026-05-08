@@ -438,4 +438,143 @@ void main() {
       expect(avail['field']!.enabled, isFalse);
     });
   });
+
+  group('Umpire.check() — multiple dependencies', () {
+    test('requires with multiple dependencies chains evaluation', () {
+      final ump = umpire(
+        fields: {
+          'a': FieldDef(required: false),
+          'b': FieldDef(required: false),
+          'c': FieldDef(required: false),
+        },
+        rules: [
+          requires('b', dependency: 'a'),
+          requires('c', dependency: 'b'),
+        ],
+      );
+
+      final empty = ump.check({});
+      expect(empty['a']!.enabled, isTrue);
+      expect(empty['b']!.enabled, isFalse);
+      expect(empty['c']!.enabled, isFalse);
+
+      final justA = ump.check({'a': 'value'});
+      expect(justA['a']!.enabled, isTrue);
+      expect(justA['b']!.enabled, isTrue);
+      expect(justA['c']!.enabled, isFalse);
+
+      final ab = ump.check({'a': 'value', 'b': 'value'});
+      expect(ab['a']!.enabled, isTrue);
+      expect(ab['b']!.enabled, isTrue);
+      expect(ab['c']!.enabled, isTrue);
+    });
+  });
+
+  group('Umpire.check() — enabledWhen with reason', () {
+    test('enabledWhen provides custom reason via constructor', () {
+      final ump = umpire(
+        fields: {
+          'accountType': FieldDef(required: true),
+          'vatNumber': FieldDef(required: false),
+        },
+        rules: [
+          enabledWhen('vatNumber',
+            predicate: (v, c) => v['accountType'] == 'business',
+            reason: 'VAT number only applies to business accounts',
+          ),
+        ],
+      );
+
+      final personal = ump.check({'accountType': 'personal'});
+      expect(personal['vatNumber']!.enabled, isFalse);
+      expect(personal['vatNumber']!.reason, 'VAT number only applies to business accounts');
+    });
+  });
+
+  group('Umpire.check() — field availability when disabled', () {
+    test('required is false when field is disabled', () {
+      final ump = umpire(
+        fields: {
+          'accountType': FieldDef(required: true),
+          'companyName': FieldDef(required: true),
+        },
+        rules: [
+          enabledWhen('companyName',
+            predicate: (v, c) => v['accountType'] == 'business',
+          ),
+        ],
+      );
+
+      final personal = ump.check({'accountType': 'personal'});
+      expect(personal['companyName']!.enabled, isFalse);
+      expect(personal['companyName']!.required, isFalse);
+    });
+  });
+
+  group('Umpire.check() — gate vs fair precedence', () {
+    test('gate disabled means fair rules are skipped', () {
+      final ump = umpire(
+        fields: {
+          'accountType': FieldDef(required: true),
+          'planId': FieldDef(required: false),
+        },
+        rules: [
+          enabledWhen('planId',
+            predicate: (v, c) => v['accountType'] == 'business',
+          ),
+          fairWhen('planId',
+            predicate: (val, v, c) => ['pro', 'team'].contains(val),
+          ),
+        ],
+      );
+
+      final personal = ump.check({'accountType': 'personal', 'planId': 'free'});
+      expect(personal['planId']!.enabled, isFalse);
+      expect(personal['planId']!.fair, isTrue);
+
+      final business = ump.check({'accountType': 'business', 'planId': 'free'});
+      expect(business['planId']!.enabled, isTrue);
+      expect(business['planId']!.fair, isFalse);
+    });
+
+    test('same field targeted by both gate and fair rules', () {
+      final ump = umpire(
+        fields: {
+          'role': FieldDef(required: true),
+          'specialField': FieldDef(required: false),
+        },
+        rules: [
+          enabledWhen('specialField',
+            predicate: (v, c) => v['role'] == 'admin',
+          ),
+          fairWhen('specialField',
+            predicate: (val, v, c) => val == 'allowed-value',
+          ),
+        ],
+      );
+
+      final nonAdmin = ump.check({'role': 'user', 'specialField': 'wrong'});
+      expect(nonAdmin['specialField']!.enabled, isFalse);
+      expect(nonAdmin['specialField']!.fair, isTrue);
+    });
+  });
+
+  group('Umpire.check() — empty rules', () {
+    test('empty rules list produces default availability', () {
+      final ump = umpire(
+        fields: {
+          'email': FieldDef(required: true),
+          'name': FieldDef(required: false),
+        },
+        rules: [],
+      );
+
+      final avail = ump.check({'email': 'test@test.com'});
+      expect(avail['email']!.enabled, isTrue);
+      expect(avail['email']!.required, isTrue);
+      expect(avail['email']!.fair, isTrue);
+      expect(avail['name']!.enabled, isTrue);
+      expect(avail['name']!.required, isFalse);
+    });
+  });
 }
