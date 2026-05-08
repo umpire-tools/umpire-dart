@@ -11,3 +11,5 @@ export 'src/rules/disables.dart';
 export 'src/rules/one_of.dart';
 export 'src/rules/any_of.dart';
 export 'src/rules/check.dart';
+export 'src/json/condition_provider.dart';
+export 'src/json/schema.dart';
