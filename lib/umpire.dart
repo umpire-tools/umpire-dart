@@ -4,6 +4,7 @@ export 'src/field_def.dart';
 export 'src/emptiness.dart';
 export 'src/satisfaction.dart';
 export 'src/equality.dart';
+export 'src/check_ops.dart';
 export 'src/rules/rule.dart';
 export 'src/rules/requires.dart';
 export 'src/rules/disables.dart';
