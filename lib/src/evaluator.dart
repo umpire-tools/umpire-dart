@@ -23,7 +23,7 @@ Map<String, _RulePhaseBuckets> _indexRulesByTargetPhase(
     final fairRules = <Rule>[];
 
     for (final rule in entry.value) {
-      if (rule.type == 'fairWhen') {
+      if (rule.constraint == 'fair') {
         fairRules.add(rule);
       } else {
         gateRules.add(rule);

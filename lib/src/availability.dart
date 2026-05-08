@@ -7,6 +7,12 @@ class FieldAvailability {
   final String? reason;
   final List<String> reasons;
 
+  /// Validation result (true = valid, false = invalid, null = no validator).
+  final bool? valid;
+
+  /// Validation error message, only set when [valid] is false.
+  final String? error;
+
   const FieldAvailability({
     required this.enabled,
     required this.required,
@@ -14,6 +20,8 @@ class FieldAvailability {
     required this.satisfied,
     this.reason,
     this.reasons = const [],
+    this.valid,
+    this.error,
   });
 }
 

@@ -27,4 +27,7 @@ enum IsEmptyStrategy {
 
   /// Value is not a list, or is an empty list.
   array,
+
+  /// Value is not a map, or is an empty map.
+  object,
 }

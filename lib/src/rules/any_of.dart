@@ -29,6 +29,7 @@ Rule anyOf(List<Rule> rules) {
     type: 'anyOf',
     targets: expectedTargets.toList(),
     sources: allSources.toList(),
+    constraint: expectedConstraint,
     evaluate: (values, conditions, [prev, fields, availability]) {
       final evaluations = rules
           .map((r) => r.evaluate(values, conditions, prev, fields, availability))
@@ -53,6 +54,5 @@ Rule anyOf(List<Rule> rules) {
 }
 
 String _ruleConstraint(Rule rule) {
-  if (rule.type == 'fairWhen') return 'fair';
-  return 'enabled';
+  return rule.constraint;
 }

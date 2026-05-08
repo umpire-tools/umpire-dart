@@ -12,7 +12,7 @@ void main() {
       );
       expect(pred({}, {'isAdmin': true}), isTrue);
       expect(pred({}, {'isAdmin': false}), isFalse);
-      expect(pred({}, {}), isFalse);
+      expect(() => pred({}, {}), throwsArgumentError);
     });
 
     test('condEq: returns true when condition equals value', () {
@@ -57,7 +57,7 @@ void main() {
         {'op': 'fieldInCond', 'field': 'planId', 'condition': 'validPlans'},
         fieldNames: fieldNames,
       );
-      expect(pred({'planId': 'pro'}, {}), isFalse);
+      expect(() => pred({'planId': 'pro'}, {}), throwsArgumentError);
       expect(
           pred({'planId': 'pro'}, {'validPlans': 'not-a-list'}), isFalse);
     });

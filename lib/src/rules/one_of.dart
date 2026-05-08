@@ -56,7 +56,7 @@ Rule oneOf(
     }).toList();
 
     if (satisfiedBranches.isEmpty) return null;
-    return satisfiedBranches.first;
+    return satisfiedBranches.last;
   }
 
   return Rule(

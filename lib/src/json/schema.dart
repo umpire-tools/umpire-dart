@@ -2,8 +2,10 @@ import 'dart:async';
 
 import '../check_ops.dart';
 import '../field_def.dart';
+import '../rules/any_of.dart';
 import '../rules/check.dart';
 import '../rules/disables.dart';
+import '../rules/either_of.dart';
 import '../rules/one_of.dart';
 import '../rules/requires.dart';
 import '../rules/rule.dart';
@@ -36,7 +38,10 @@ class JsonRule {
   final String? source;
   final String? op;
   final String? dependency;
+  final List<dynamic>? dependencies;
   final dynamic validator;
+  final Map<String, List<Map<String, dynamic>>>? rawBranches;
+  final List<Map<String, dynamic>>? subRuleData;
 
   const JsonRule({
     required this.type,
@@ -50,7 +55,10 @@ class JsonRule {
     this.source,
     this.op,
     this.dependency,
+    this.dependencies,
     this.validator,
+    this.rawBranches,
+    this.subRuleData,
   });
 }
 
@@ -105,11 +113,16 @@ class UmpireSchema {
         }
       }
 
+      final fieldNamesSet = fields.keys.toSet();
+
       final jsonRules = <JsonRule>[];
       if (json['rules'] != null) {
         final rulesList = json['rules'] as List<dynamic>;
         for (final ruleData in rulesList) {
-          jsonRules.add(_parseJsonRule(ruleData as Map<String, dynamic>));
+          final parsed = _parseJsonRule(ruleData as Map<String, dynamic>);
+          _validateRuleFields(parsed, fieldNamesSet);
+          _validateRuleConditions(parsed, conditions);
+          jsonRules.add(parsed);
         }
       }
 
@@ -140,6 +153,8 @@ class UmpireSchema {
       );
     } on TypeError catch (e) {
       throw UmpireSchemaException('Invalid schema format: $e');
+    } on FormatException catch (e) {
+      throw UmpireSchemaException('Invalid regex pattern: ${e.message}');
     }
   }
 
@@ -179,100 +194,321 @@ class UmpireSchema {
 
     final compiledRules = <Rule>[];
     for (final jsonRule in this.rules) {
-      switch (jsonRule.type) {
-        case 'requires':
-          if (jsonRule.dependency != null) {
-            compiledRules.add(requires(
-              jsonRule.field!,
-              dependency: jsonRule.dependency,
-              reason: jsonRule.reason,
-            ));
-          } else if (jsonRule.when != null) {
-            final predicate = compileExpr(
-              jsonRule.when!,
-              fieldNames: fieldNamesSet,
-            );
-            compiledRules.add(requires(
-              jsonRule.field!,
-              when: predicate,
-              reason: jsonRule.reason,
-            ));
-          }
-          break;
-
-        case 'enabledWhen':
-          final predicate = compileExpr(
-            jsonRule.when!,
-            fieldNames: fieldNamesSet,
-          );
-          compiledRules.add(enabledWhen(
-            jsonRule.field!,
-            predicate: predicate,
-            reason: jsonRule.reason,
-          ));
-          break;
-
-        case 'fairWhen':
-          final predicate = compileExpr(
-            jsonRule.when!,
-            fieldNames: fieldNamesSet,
-          );
-          compiledRules.add(fairWhen(
-            jsonRule.field!,
-            predicate: (value, values, conds) => predicate(values, conds),
-            reason: jsonRule.reason,
-          ));
-          break;
-
-        case 'disables':
-          if (jsonRule.when != null) {
-            final predicate = compileExpr(
-              jsonRule.when!,
-              fieldNames: fieldNamesSet,
-            );
-            compiledRules.add(disables(
-              jsonRule.source!,
-              jsonRule.targets!,
-              when: predicate,
-              reason: jsonRule.reason,
-            ));
-          } else {
-            compiledRules.add(disables(
-              jsonRule.source!,
-              jsonRule.targets!,
-              reason: jsonRule.reason,
-            ));
-          }
-          break;
-
-        case 'oneOf':
-          compiledRules.add(oneOf(
-            jsonRule.group!,
-            jsonRule.branches!,
-            activeBranch: jsonRule.activeBranch,
-            reason: jsonRule.reason,
-          ));
-          break;
-
-        case 'check':
-          final checkPredicate = check(jsonRule.field!, jsonRule.validator);
-          compiledRules.add(fairWhen(
-            jsonRule.field!,
-            predicate: (value, values, conds) => checkPredicate(values, conds),
-            reason: jsonRule.reason,
-          ));
-          break;
-
-        default:
-          throw UmpireSchemaException(
-            'Unknown rule type: "${jsonRule.type}"',
-          );
-      }
+      compiledRules.add(_buildRule(jsonRule, fieldNamesSet));
     }
 
     final allRules = [...compiledRules, ...rules];
 
-    return umpire(fields: fields, rules: allRules);
+    final compiledValidators = <String, ValidatorEntry>{};
+    for (final entry in validators.entries) {
+      final vMap = entry.value as Map<String, dynamic>?;
+      if (vMap == null) continue;
+      final op = _parseCheckOp(
+          vMap['op'] as String?, vMap['params'] as Map<String, dynamic>?);
+      compiledValidators[entry.key] = ValidatorEntry(
+        op: op,
+        error: vMap['error'] as String? ?? 'Invalid value',
+      );
+    }
+
+    return umpire(
+        fields: fields, rules: allRules, validators: compiledValidators);
+  }
+
+  Rule _buildRule(JsonRule jsonRule, Set<String> fieldNamesSet) {
+    switch (jsonRule.type) {
+      case 'requires':
+        if (jsonRule.dependencies != null && jsonRule.dependencies!.isNotEmpty) {
+          // Build a compound predicate that ANDs all dependencies
+          final deps = jsonRule.dependencies!.map((d) {
+            if (d is String) {
+              // Field dependency — satisfied if value is non-null
+              return (Map<String, dynamic> values, Map<String, dynamic> conds) {
+                return values.containsKey(d) && values[d] != null;
+              };
+            }
+            // Expression dependency
+            return compileExpr(
+              d as Map<String, dynamic>,
+              fieldNames: fieldNamesSet,
+            );
+          }).toList();
+
+          final combinedPredicate = (Map<String, dynamic> values,
+              Map<String, dynamic> conds) {
+            return deps.every((p) => p(values, conds));
+          };
+
+          return requires(
+            jsonRule.field!,
+            when: combinedPredicate,
+            reason: jsonRule.reason,
+          );
+        }
+        if (jsonRule.dependency != null) {
+          return requires(
+            jsonRule.field!,
+            dependency: jsonRule.dependency,
+            reason: jsonRule.reason,
+          );
+        } else if (jsonRule.when != null) {
+          final predicate = compileExpr(
+            jsonRule.when!,
+            fieldNames: fieldNamesSet,
+          );
+          return requires(
+            jsonRule.field!,
+            when: predicate,
+            reason: jsonRule.reason,
+          );
+        }
+        throw UmpireSchemaException('requires rule missing dependency or when');
+
+      case 'enabledWhen':
+        final predicate = compileExpr(
+          jsonRule.when!,
+          fieldNames: fieldNamesSet,
+        );
+        return enabledWhen(
+          jsonRule.field!,
+          predicate: predicate,
+          reason: jsonRule.reason,
+        );
+
+      case 'fairWhen':
+        final predicate = compileExpr(
+          jsonRule.when!,
+          fieldNames: fieldNamesSet,
+        );
+        return fairWhen(
+          jsonRule.field!,
+          predicate: (value, values, conds) => predicate(values, conds),
+          reason: jsonRule.reason,
+        );
+
+      case 'disables':
+        if (jsonRule.source == null && jsonRule.when == null) {
+          throw UmpireSchemaException(
+              'disables rule requires "source", "field", or "when"');
+        }
+        if (jsonRule.targets == null || jsonRule.targets!.isEmpty) {
+          throw UmpireSchemaException(
+              'disables rule requires non-empty "targets"');
+        }
+        if (jsonRule.when != null) {
+          final predicate = compileExpr(
+            jsonRule.when!,
+            fieldNames: fieldNamesSet,
+          );
+          return disables(
+            jsonRule.source,
+            jsonRule.targets!,
+            when: predicate,
+            reason: jsonRule.reason,
+          );
+        }
+        return disables(
+          jsonRule.source,
+          jsonRule.targets!,
+          reason: jsonRule.reason,
+        );
+
+      case 'oneOf':
+        return oneOf(
+          jsonRule.group!,
+          jsonRule.branches!,
+          activeBranch: jsonRule.activeBranch,
+          reason: jsonRule.reason,
+        );
+
+      case 'check':
+        final op = jsonRule.validator as CheckOp;
+        final checkPredicate = check(jsonRule.field!, op);
+        return fairWhen(
+          jsonRule.field!,
+          predicate: (value, values, conds) => checkPredicate(values, conds),
+          reason: jsonRule.reason ?? op.reason,
+        );
+
+      case 'eitherOf':
+        final compiledBranches = <String, List<Rule>>{};
+        for (final entry in jsonRule.rawBranches!.entries) {
+          compiledBranches[entry.key] = entry.value
+              .map((subRuleJson) {
+                final parsed = _parseJsonRule(subRuleJson);
+                return _buildRule(parsed, fieldNamesSet);
+              })
+              .toList();
+        }
+        return eitherOf(
+          jsonRule.group!,
+          compiledBranches,
+          reason: jsonRule.reason,
+        );
+
+      case 'anyOf':
+        final compiledSubRules = jsonRule.subRuleData!
+            .map((raw) {
+              final parsed = _parseJsonRule(raw);
+              _validateRuleFields(parsed, fieldNamesSet);
+              return _buildRule(parsed, fieldNamesSet);
+            })
+            .toList();
+        return anyOf(compiledSubRules);
+
+      default:
+        throw UmpireSchemaException(
+          'Unknown rule type: "${jsonRule.type}"',
+        );
+    }
+  }
+}
+
+void _validateRuleFields(JsonRule rule, Set<String> fieldNames) {
+  // Validate field references
+  if (rule.field != null && !fieldNames.contains(rule.field)) {
+    throw UmpireSchemaException(
+        'Unknown field "${rule.field}" in ${rule.type} rule');
+  }
+  if (rule.source != null && !fieldNames.contains(rule.source)) {
+    throw UmpireSchemaException(
+        'Unknown field "${rule.source}" in ${rule.type} rule');
+  }
+  if (rule.targets != null) {
+    for (final t in rule.targets!) {
+      if (!fieldNames.contains(t)) {
+        throw UmpireSchemaException(
+            'Unknown field "$t" in ${rule.type} rule');
+      }
+    }
+  }
+  if (rule.branches != null) {
+    for (final fields in rule.branches!.values) {
+      for (final f in fields) {
+        if (!fieldNames.contains(f)) {
+          throw UmpireSchemaException(
+              'Unknown field "$f" in ${rule.type} rule');
+        }
+      }
+    }
+  }
+  if (rule.when != null) {
+    _validateExprFields(rule.when!, fieldNames);
+  }
+  if (rule.rawBranches != null) {
+    for (final subRules in rule.rawBranches!.values) {
+      for (final subRule in subRules) {
+        _validateExprFieldsInRuleMap(subRule, fieldNames);
+      }
+    }
+  }
+  if (rule.subRuleData != null) {
+    for (final subRule in rule.subRuleData!) {
+      _validateExprFieldsInRuleMap(subRule, fieldNames);
+    }
+  }
+}
+
+void _validateExprFieldsInRuleMap(
+    Map<String, dynamic> data, Set<String> fieldNames) {
+  if (data['field'] != null && !fieldNames.contains(data['field'])) {
+    throw UmpireSchemaException(
+        'Unknown field "${data['field']}" in rule expression');
+  }
+  if (data['when'] != null) {
+    _validateExprFields(data['when'] as Map<String, dynamic>, fieldNames);
+  }
+}
+
+void _validateExprFields(Map<String, dynamic> expr, Set<String> fieldNames) {
+  final op = expr['op'] as String?;
+  final field = expr['field'] as String?;
+  if (field != null && !fieldNames.contains(field)) {
+    throw UmpireSchemaException('Unknown field "$field" in expression');
+  }
+
+  // Validate check expressions eagerly for invalid regex patterns
+  if (op == 'check') {
+    final check = expr['check'] as Map<String, dynamic>?;
+    if (check != null) {
+      final checkOp = check['op'] as String?;
+      if (checkOp == 'matches') {
+        final pattern = check['pattern'] as String?;
+        if (pattern != null) {
+          try {
+            RegExp(pattern);
+          } on FormatException catch (e) {
+            throw UmpireSchemaException(
+                'Invalid regex pattern in check expression: ${e.message}');
+          }
+        }
+      }
+    }
+  }
+
+  final exprs = expr['exprs'] as List?;
+  if (exprs != null) {
+    for (final e in exprs) {
+      _validateExprFields(e as Map<String, dynamic>, fieldNames);
+    }
+  }
+
+  final subExpr = expr['expr'] as Map<String, dynamic>?;
+  if (subExpr != null) {
+    _validateExprFields(subExpr, fieldNames);
+  }
+}
+
+void _validateRuleConditions(
+    JsonRule rule, Map<String, ConditionDef> conditions) {
+  if (rule.when != null) {
+    _validateExprConditions(rule.when!, conditions);
+  }
+  if (rule.rawBranches != null) {
+    for (final subRules in rule.rawBranches!.values) {
+      for (final subRule in subRules) {
+        if (subRule['when'] != null) {
+          _validateExprConditions(
+              subRule['when'] as Map<String, dynamic>, conditions);
+        }
+      }
+    }
+  }
+  if (rule.subRuleData != null) {
+    for (final subRule in rule.subRuleData!) {
+      if (subRule['when'] != null) {
+        _validateExprConditions(
+            subRule['when'] as Map<String, dynamic>, conditions);
+      }
+    }
+  }
+}
+
+void _validateExprConditions(
+    Map<String, dynamic> expr, Map<String, ConditionDef> conditions) {
+  final op = expr['op'] as String?;
+  final condition = expr['condition'] as String?;
+
+  if (op == 'fieldInCond' && condition != null) {
+    final condDef = conditions[condition];
+    if (condDef == null || !condDef.type.endsWith('[]')) {
+      throw UmpireSchemaException(
+        '"fieldInCond" expression references condition "$condition", '
+        'which must be an array condition.',
+      );
+    }
+  }
+
+  final exprs = expr['exprs'] as List?;
+  if (exprs != null) {
+    for (final e in exprs) {
+      _validateExprConditions(e as Map<String, dynamic>, conditions);
+    }
+  }
+
+  final subExpr = expr['expr'] as Map<String, dynamic>?;
+  if (subExpr != null) {
+    _validateExprConditions(subExpr, conditions);
   }
 }
 
@@ -287,6 +523,8 @@ IsEmptyStrategy _parseIsEmptyStrategy(String? value) {
       return IsEmptyStrategy.boolean;
     case 'array':
       return IsEmptyStrategy.array;
+    case 'object':
+      return IsEmptyStrategy.object;
     default:
       return IsEmptyStrategy.present;
   }
@@ -297,6 +535,14 @@ JsonRule _parseJsonRule(Map<String, dynamic> data) {
 
   switch (type) {
     case 'requires':
+      if (data.containsKey('dependencies')) {
+        return JsonRule(
+          type: type,
+          field: data['field'] as String?,
+          dependencies: data['dependencies'] as List<dynamic>?,
+          reason: data['reason'] as String?,
+        );
+      }
       if (data.containsKey('dependency')) {
         return JsonRule(
           type: type,
@@ -324,7 +570,7 @@ JsonRule _parseJsonRule(Map<String, dynamic> data) {
     case 'disables':
       return JsonRule(
         type: type,
-        source: data['field'] as String?,
+        source: (data['field'] ?? data['source']) as String?,
         targets: (data['targets'] as List<dynamic>?)?.cast<String>(),
         when: data['when'] as Map<String, dynamic>?,
         reason: data['reason'] as String?,
@@ -345,13 +591,46 @@ JsonRule _parseJsonRule(Map<String, dynamic> data) {
 
     case 'check':
       final op = data['op'] as String?;
-      final params = data['params'] as Map<String, dynamic>?;
+      var params = data['params'] as Map<String, dynamic>?;
+      // Conformance fixtures use flat params at the rule level
+      if (params == null && data.containsKey('pattern')) {
+        params = data;
+      }
+      if (params == null && data.containsKey('value')) {
+        params = data;
+      }
+      if (params == null && data.containsKey('min')) {
+        params = data;
+      }
       return JsonRule(
         type: type,
         field: data['field'] as String?,
         op: op,
         reason: data['reason'] as String?,
         validator: _parseCheckOp(op, params),
+      );
+
+    case 'eitherOf':
+      final branchesJson = data['branches'] as Map<String, dynamic>;
+      final rawBranches = <String, List<Map<String, dynamic>>>{};
+      for (final entry in branchesJson.entries) {
+        rawBranches[entry.key] =
+            (entry.value as List<dynamic>).cast<Map<String, dynamic>>();
+      }
+      return JsonRule(
+        type: type,
+        group: data['group'] as String?,
+        reason: data['reason'] as String?,
+        rawBranches: rawBranches,
+      );
+
+    case 'anyOf':
+      final rulesList = data['rules'] as List<dynamic>?;
+      return JsonRule(
+        type: type,
+        reason: data['reason'] as String?,
+        subRuleData:
+            (rulesList ?? []).cast<Map<String, dynamic>>(),
       );
 
     default:
@@ -370,42 +649,45 @@ CheckOp _parseCheckOp(String? op, Map<String, dynamic>? params) {
     case 'url':
       return checkOps.url();
     case 'matches':
-      if (params == null || params['pattern'] == null) {
+      final pattern = params?['pattern'] as String?;
+      if (pattern == null) {
         throw UmpireSchemaException(
-          'Check "matches" requires "params.pattern"',
+          'Check "matches" requires "pattern"',
         );
       }
-      return checkOps.matches(RegExp(params['pattern'] as String));
+      return checkOps.matches(RegExp(pattern));
     case 'minLength':
-      if (params == null || params['min'] == null) {
+      final min = params?['min'] ?? params?['value'];
+      if (min == null) {
         throw UmpireSchemaException(
-          'Check "minLength" requires "params.min"',
+          'Check "minLength" requires "min" or "value"',
         );
       }
-      return checkOps.minLength(params['min'] as int);
+      return checkOps.minLength(min as int);
     case 'maxLength':
-      if (params == null || params['max'] == null) {
+      final max = params?['max'] ?? params?['value'];
+      if (max == null) {
         throw UmpireSchemaException(
-          'Check "maxLength" requires "params.max"',
+          'Check "maxLength" requires "max" or "value"',
         );
       }
-      return checkOps.maxLength(params['max'] as int);
+      return checkOps.maxLength(max as int);
     case 'min':
-      if (params == null || params['min'] == null) {
-        throw UmpireSchemaException('Check "min" requires "params.min"');
+      final minVal = params?['min'] ?? params?['value'];
+      if (minVal == null) {
+        throw UmpireSchemaException('Check "min" requires "min" or "value"');
       }
-      return checkOps.min(params['min'] as num);
+      return checkOps.min(minVal as num);
     case 'max':
-      if (params == null || params['max'] == null) {
-        throw UmpireSchemaException('Check "max" requires "params.max"');
+      final maxVal = params?['max'] ?? params?['value'];
+      if (maxVal == null) {
+        throw UmpireSchemaException('Check "max" requires "max" or "value"');
       }
-      return checkOps.max(params['max'] as num);
+      return checkOps.max(maxVal as num);
     case 'range':
-      if (params == null ||
-          params['min'] == null ||
-          params['max'] == null) {
+      if (params == null || params['min'] == null || params['max'] == null) {
         throw UmpireSchemaException(
-          'Check "range" requires "params.min" and "params.max"',
+          'Check "range" requires "min" and "max"',
         );
       }
       return checkOps.range(

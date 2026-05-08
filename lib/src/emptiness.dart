@@ -10,6 +10,11 @@ bool isEmptyBoolean(dynamic value) => value is! bool;
 
 bool isEmptyArray(dynamic value) => value is! List || value.isEmpty;
 
+bool isEmptyObject(dynamic value) {
+  if (value is! Map) return true;
+  return value.isEmpty;
+}
+
 bool checkIsEmpty(IsEmptyStrategy strategy, dynamic value) {
   switch (strategy) {
     case IsEmptyStrategy.string:
@@ -20,6 +25,8 @@ bool checkIsEmpty(IsEmptyStrategy strategy, dynamic value) {
       return isEmptyBoolean(value);
     case IsEmptyStrategy.array:
       return isEmptyArray(value);
+    case IsEmptyStrategy.object:
+      return isEmptyObject(value);
     case IsEmptyStrategy.present:
       return isEmptyPresent(value);
   }

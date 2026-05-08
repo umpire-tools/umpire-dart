@@ -41,7 +41,7 @@ bool Function(dynamic) _compileCheck(Map<String, dynamic> check) {
             'Invalid regex pattern in "matches" check: $pattern — ${e.message}');
       }
     case 'minLength':
-      final min = check['min'] as num?;
+      final min = (check['min'] ?? check['value']) as num?;
       if (min == null) {
         throw ArgumentError('Check "minLength" requires a "min" parameter');
       }
@@ -50,7 +50,7 @@ bool Function(dynamic) _compileCheck(Map<String, dynamic> check) {
         return v.length >= min;
       };
     case 'maxLength':
-      final max = check['max'] as num?;
+      final max = (check['max'] ?? check['value']) as num?;
       if (max == null) {
         throw ArgumentError('Check "maxLength" requires a "max" parameter');
       }
@@ -59,7 +59,7 @@ bool Function(dynamic) _compileCheck(Map<String, dynamic> check) {
         return v.length <= max;
       };
     case 'min':
-      final minValue = check['min'] as num?;
+      final minValue = (check['min'] ?? check['value']) as num?;
       if (minValue == null) {
         throw ArgumentError('Check "min" requires a "min" parameter');
       }
@@ -68,7 +68,7 @@ bool Function(dynamic) _compileCheck(Map<String, dynamic> check) {
         return v >= minValue;
       };
     case 'max':
-      final maxValue = check['max'] as num?;
+      final maxValue = (check['max'] ?? check['value']) as num?;
       if (maxValue == null) {
         throw ArgumentError('Check "max" requires a "max" parameter');
       }
@@ -121,7 +121,12 @@ Predicate compileExpr(
       if (condition == null) {
         throw ArgumentError('cond expression missing "condition" field');
       }
-      return (values, conditions) => conditions[condition] == true;
+      return (values, conditions) {
+        if (!conditions.containsKey(condition)) {
+          throw ArgumentError('Missing runtime condition "$condition"');
+        }
+        return conditions[condition] == true;
+      };
 
     case 'condEq':
       final condition = expr['condition'] as String?;
@@ -129,7 +134,12 @@ Predicate compileExpr(
         throw ArgumentError('condEq expression missing "condition" field');
       }
       final value = expr['value'];
-      return (values, conditions) => conditions[condition] == value;
+      return (values, conditions) {
+        if (!conditions.containsKey(condition)) {
+          throw ArgumentError('Missing runtime condition "$condition"');
+        }
+        return conditions[condition] == value;
+      };
 
     case 'condIn':
       final condition = expr['condition'] as String?;
@@ -140,7 +150,12 @@ Predicate compileExpr(
       if (values == null) {
         throw ArgumentError('condIn expression missing "values" field');
       }
-      return (vs, conditions) => values.contains(conditions[condition]);
+      return (vs, conditions) {
+        if (!conditions.containsKey(condition)) {
+          throw ArgumentError('Missing runtime condition "$condition"');
+        }
+        return values.contains(conditions[condition]);
+      };
 
     case 'fieldInCond':
       final field = _validateField(expr, fieldNames);
@@ -149,6 +164,9 @@ Predicate compileExpr(
         throw ArgumentError('fieldInCond expression missing "condition" field');
       }
       return (values, conditions) {
+        if (!conditions.containsKey(condition)) {
+          throw ArgumentError('Missing runtime condition "$condition"');
+        }
         final c = conditions[condition];
         return c is List && c.contains(values[field]);
       };
@@ -162,6 +180,42 @@ Predicate compileExpr(
       final field = _validateField(expr, fieldNames);
       final value = expr['value'];
       return (values, conditions) => values[field] != value;
+
+    case 'gt':
+      final field = _validateField(expr, fieldNames);
+      final value = expr['value'] as num?;
+      if (value == null) throw ArgumentError('gt expression missing "value"');
+      return (values, conditions) {
+        final v = values[field];
+        return v is num && v > value;
+      };
+
+    case 'gte':
+      final field = _validateField(expr, fieldNames);
+      final value = expr['value'] as num?;
+      if (value == null) throw ArgumentError('gte expression missing "value"');
+      return (values, conditions) {
+        final v = values[field];
+        return v is num && v >= value;
+      };
+
+    case 'lt':
+      final field = _validateField(expr, fieldNames);
+      final value = expr['value'] as num?;
+      if (value == null) throw ArgumentError('lt expression missing "value"');
+      return (values, conditions) {
+        final v = values[field];
+        return v is num && v < value;
+      };
+
+    case 'lte':
+      final field = _validateField(expr, fieldNames);
+      final value = expr['value'] as num?;
+      if (value == null) throw ArgumentError('lte expression missing "value"');
+      return (values, conditions) {
+        final v = values[field];
+        return v is num && v <= value;
+      };
 
     case 'truthy':
       final field = _validateField(expr, fieldNames);
@@ -203,6 +257,40 @@ Predicate compileExpr(
       final predicate =
           compileExpr(subExpr, fieldNames: fieldNames, depth: depth + 1);
       return (values, conditions) => !predicate(values, conditions);
+
+    case 'present':
+      final field = _validateField(expr, fieldNames);
+      return (values, conditions) =>
+          values.containsKey(field) && values[field] != null;
+
+    case 'absent':
+      final field = _validateField(expr, fieldNames);
+      return (values, conditions) =>
+          !values.containsKey(field) || values[field] == null;
+
+    case 'in':
+      final field = _validateField(expr, fieldNames);
+      final valuesList = expr['values'] as List?;
+      if (valuesList == null) {
+        throw ArgumentError('in expression missing "values" field');
+      }
+      return (vs, conditions) => valuesList.contains(vs[field]);
+
+    case 'notIn':
+      final field = _validateField(expr, fieldNames);
+      final valuesList = expr['values'] as List?;
+      if (valuesList == null) {
+        throw ArgumentError('notIn expression missing "values" field');
+      }
+      return (vs, conditions) => !valuesList.contains(vs[field]);
+
+    case 'contains':
+      final field = _validateField(expr, fieldNames);
+      final value = expr['value'];
+      return (values, conditions) {
+        final v = values[field];
+        return v is List && v.contains(value);
+      };
 
     case 'check':
       final field = _validateField(expr, fieldNames);

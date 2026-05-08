@@ -97,6 +97,7 @@ Rule fairWhen(
   return Rule(
     type: 'fairWhen',
     targets: [field],
+    constraint: 'fair',
     evaluate: (values, conditions, [prev, fields, availability]) {
       final value = values[field];
 

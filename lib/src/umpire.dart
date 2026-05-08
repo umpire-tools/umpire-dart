@@ -1,9 +1,17 @@
 import 'availability.dart';
+import 'check_ops.dart';
 import 'equality.dart';
 import 'evaluator.dart' as eval;
 import 'field_def.dart';
 import 'graph.dart';
 import 'rules/rule.dart';
+import 'satisfaction.dart';
+
+class ValidatorEntry {
+  final CheckOp op;
+  final String error;
+  const ValidatorEntry({required this.op, required this.error});
+}
 
 /// The core form validation engine.
 ///
@@ -13,14 +21,17 @@ class Umpire {
   final List<Rule> _rules;
   final List<String> _fieldNames;
   final List<String> _topoOrder;
+  final Map<String, ValidatorEntry> _validators;
 
   Umpire._({
     required Map<String, FieldDef> fields,
     required List<Rule> rules,
+    Map<String, ValidatorEntry> validators = const {},
   })  : _fields = fields,
         _rules = rules,
         _fieldNames = fields.keys.toList(),
-        _topoOrder = _computeTopoOrder(fields, rules);
+        _topoOrder = _computeTopoOrder(fields, rules),
+        _validators = validators;
 
   static List<String> _computeTopoOrder(
     Map<String, FieldDef> fields,
@@ -37,13 +48,52 @@ class Umpire {
     Map<String, dynamic> values, {
     Map<String, dynamic> conditions = const {},
   }) {
-    return eval.evaluate(
+    final result = eval.evaluate(
       _fields,
       _rules,
       _topoOrder,
       values,
       conditions,
     );
+
+    if (_validators.isNotEmpty) {
+      for (final entry in _validators.entries) {
+        final field = entry.key;
+        final validator = entry.value;
+        final avail = result[field];
+        if (avail == null) continue;
+
+        final value = values[field];
+        if (!isSatisfied(value, _fields[field])) continue;
+
+        try {
+          final passes = validator.op.validate(value);
+          result[field] = FieldAvailability(
+            enabled: avail.enabled,
+            required: avail.required,
+            fair: avail.fair,
+            satisfied: avail.satisfied,
+            reason: avail.reason,
+            reasons: avail.reasons,
+            valid: passes,
+            error: passes ? null : validator.error,
+          );
+        } catch (_) {
+          result[field] = FieldAvailability(
+            enabled: avail.enabled,
+            required: avail.required,
+            fair: avail.fair,
+            satisfied: avail.satisfied,
+            reason: avail.reason,
+            reasons: avail.reasons,
+            valid: false,
+            error: validator.error,
+          );
+        }
+      }
+    }
+
+    return result;
   }
 
   /// Computes recommended fouls when transitioning from [before] to [after].
@@ -123,9 +173,10 @@ class Umpire {
 Umpire umpire({
   required Map<String, FieldDef> fields,
   required List<Rule> rules,
+  Map<String, ValidatorEntry> validators = const {},
 }) {
   _validateRules(fields, rules);
-  return Umpire._(fields: fields, rules: rules);
+  return Umpire._(fields: fields, rules: rules, validators: validators);
 }
 
 void _validateRules(Map<String, FieldDef> fields, List<Rule> rules) {

@@ -43,12 +43,14 @@ class Rule {
   final String type;
   final List<String> targets;
   final List<String> sources;
+  final String constraint;
   final RuleEvaluator evaluate;
 
   const Rule({
     required this.type,
     required this.targets,
     this.sources = const [],
+    this.constraint = 'enabled',
     required this.evaluate,
   });
 }
