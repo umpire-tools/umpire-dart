@@ -1,7 +1,7 @@
 name: umpire
 description: Declarative form validation with conditional field availability.
 version: 0.1.0
-repository: https://github.com/daywatch/umpire-dart
+repository: https://github.com/umpire-tools/umpire-dart
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

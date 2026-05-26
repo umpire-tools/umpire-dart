@@ -1,7 +1,7 @@
 name: umpire_flutter
 description: Flutter reactive bindings for the umpire form validation engine.
 version: 0.1.0
-repository: https://github.com/daywatch/umpire-dart
+repository: https://github.com/umpire-tools/umpire-dart
 publish_to: none
 
 environment:
