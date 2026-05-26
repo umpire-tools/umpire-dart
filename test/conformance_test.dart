@@ -18,28 +18,23 @@ void main() {
       final index =
           jsonDecode(indexFile.readAsStringSync()) as Map<String, dynamic>;
 
-      final fixturesDir = index['fixturesDir'] as String? ?? 'fixtures';
-      final failuresDir = index['failuresDir'] as String? ?? 'failures';
+     final fixtureEntries = index['fixtures'] as List<dynamic>? ?? [];
+        for (final entry in fixtureEntries) {
+          final relPath = entry is String ? entry : (entry as Map<String, dynamic>)['path'] as String;
+          final fixturePath = '$conformanceDir/$relPath';
+          final data =
+              jsonDecode(File(fixturePath).readAsStringSync()) as Map<String, dynamic>;
+          allFixtures.add(data);
+        }
 
-      final fixtureEntries = index['fixtures'] as List<dynamic>? ?? [];
-      for (final entry in fixtureEntries) {
-        final relPath = entry is String ? entry : (entry as Map<String, dynamic>)['path'] as String;
-        final fileName = relPath.split('/').last;
-        final fixturePath = '$conformanceDir/$fileName';
-        final data =
-            jsonDecode(File(fixturePath).readAsStringSync()) as Map<String, dynamic>;
-        allFixtures.add(data);
-      }
-
-      final failureEntries = index['failures'] as List<dynamic>? ?? [];
-      for (final entry in failureEntries) {
-        final relPath = entry is String ? entry : (entry as Map<String, dynamic>)['path'] as String;
-        final fileName = relPath.split('/').last;
-        final failurePath = '$conformanceDir/$fileName';
-        final data =
-            jsonDecode(File(failurePath).readAsStringSync()) as Map<String, dynamic>;
-        allFailures.add(data);
-      }
+        final failureEntries = index['failures'] as List<dynamic>? ?? [];
+        for (final entry in failureEntries) {
+          final relPath = entry is String ? entry : (entry as Map<String, dynamic>)['path'] as String;
+          final failurePath = '$conformanceDir/$relPath';
+          final data =
+              jsonDecode(File(failurePath).readAsStringSync()) as Map<String, dynamic>;
+          allFailures.add(data);
+        }
     });
 
     test('fixtures are loaded', () {
