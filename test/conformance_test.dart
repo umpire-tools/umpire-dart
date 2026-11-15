@@ -117,6 +117,40 @@ void main() {
       }
     });
   });
+
+  group('spec sync', () {
+    final overrideDir = Platform.environment['UMPIRE_SPEC_CONFORMANCE_DIR'];
+
+    test(
+      'spec/ is synced at the version pinned in mise.toml',
+      () {
+        final syncedAt = File('spec/.synced-at-version');
+        if (!syncedAt.existsSync()) {
+          fail('spec/.synced-at-version is missing; run `mise run spec-sync`');
+        }
+        expect(
+          syncedAt.readAsStringSync().trim(),
+          _pinnedSpecVersion(),
+          reason: 'spec/ fixtures are stale; run `mise run spec-sync`',
+        );
+      },
+      skip: overrideDir != null && overrideDir.isNotEmpty
+          ? 'UMPIRE_SPEC_CONFORMANCE_DIR points at an external spec checkout'
+          : null,
+    );
+  });
+}
+
+/// Reads `UMPIRE_SPEC_VERSION` out of `mise.toml`.
+String _pinnedSpecVersion() {
+  final toml = File('mise.toml').readAsStringSync();
+  final match =
+      RegExp(r'^UMPIRE_SPEC_VERSION\s*=\s*"([^"]+)"', multiLine: true)
+          .firstMatch(toml);
+  if (match == null) {
+    fail('mise.toml has no UMPIRE_SPEC_VERSION entry');
+  }
+  return match.group(1)!;
 }
 
 void _compareAvailability(

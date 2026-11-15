@@ -61,13 +61,15 @@ void validateSchemaJson(Map<String, dynamic> schema) {
     conditionTypes[entry.key] = _validateConditionDef(entry.key, entry.value);
   }
 
+  final fieldIsEmpty = <String, String>{};
   for (final entry in fields.entries) {
-    _validateFieldDef(entry.key, entry.value);
+    final strategy = _validateFieldDef(entry.key, entry.value);
+    if (strategy != null) fieldIsEmpty[entry.key] = strategy;
   }
 
   final fieldNames = fields.keys.toSet();
   for (final rule in rules) {
-    _validateRule(rule, fieldNames, conditionTypes);
+    _validateRule(rule, fieldNames, conditionTypes, fieldIsEmpty);
   }
 
   for (final entry in (validators ?? const {}).entries) {
@@ -102,7 +104,7 @@ String _validateConditionDef(String name, dynamic definition) {
   return type;
 }
 
-void _validateFieldDef(String name, dynamic definition) {
+String? _validateFieldDef(String name, dynamic definition) {
   final record = _asRecord(definition, 'field definition for "$name"');
   _assertKnownMembers(
     record,
@@ -115,7 +117,7 @@ void _validateFieldDef(String name, dynamic definition) {
       'field definition for "$name" required must be a boolean when provided',
     );
   }
-  if (record.containsKey('default') && !_isJsonPrimitive(record['default'])) {
+  if (record.containsKey('default') && !isJsonPrimitive(record['default'])) {
     throw UmpireSchemaException(
       'field definition for "$name" has a non-serializable "default" value',
     );
@@ -127,12 +129,15 @@ void _validateFieldDef(String name, dynamic definition) {
       'Unknown isEmpty strategy "$isEmpty" on field "$name"',
     );
   }
+
+  return isEmpty is String ? isEmpty : null;
 }
 
 void _validateRule(
   dynamic rule,
   Set<String> fieldNames,
   Map<String, String> conditionTypes,
+  Map<String, String> fieldIsEmpty,
 ) {
   final record = _asRecord(rule, 'Rule');
   final type = record['type'];
@@ -148,13 +153,13 @@ void _validateRule(
 
   switch (type) {
     case 'requires':
-      _validateRequiresRule(record, fieldNames, conditionTypes);
+      _validateRequiresRule(record, fieldNames, conditionTypes, fieldIsEmpty);
     case 'enabledWhen':
     case 'fairWhen':
       _assertField(record['field'], fieldNames, 'Rule "$type"');
-      _validateExprRoot(record['when'], fieldNames, conditionTypes);
+      _validateExprRoot(record['when'], fieldNames, conditionTypes, fieldIsEmpty);
     case 'disables':
-      _validateDisablesRule(record, fieldNames, conditionTypes);
+      _validateDisablesRule(record, fieldNames, conditionTypes, fieldIsEmpty);
     case 'oneOf':
       _assertString(record['group'], 'Rule "oneOf" group');
       _validateOneOfBranches(record, fieldNames);
@@ -178,7 +183,7 @@ void _validateRule(
           );
         }
         for (final inner in branchRules) {
-          _validateRule(inner, fieldNames, conditionTypes);
+          _validateRule(inner, fieldNames, conditionTypes, fieldIsEmpty);
         }
       }
     case 'anyOf':
@@ -187,7 +192,7 @@ void _validateRule(
         throw UmpireSchemaException('anyOf() requires at least one rule');
       }
       for (final inner in innerRules) {
-        _validateRule(inner, fieldNames, conditionTypes);
+        _validateRule(inner, fieldNames, conditionTypes, fieldIsEmpty);
       }
     case 'check':
       _assertField(record['field'], fieldNames, 'Rule "check"');
@@ -234,6 +239,7 @@ void _validateRequiresRule(
   Map<String, dynamic> rule,
   Set<String> fieldNames,
   Map<String, String> conditionTypes,
+  Map<String, String> fieldIsEmpty,
 ) {
   _assertField(rule['field'], fieldNames, 'Rule "requires"');
 
@@ -253,19 +259,21 @@ void _validateRequiresRule(
       if (dependency is String) {
         _assertField(dependency, fieldNames, 'Rule "requires"');
       } else {
-        _validateExprRoot(dependency, fieldNames, conditionTypes);
+        _validateExprRoot(
+            dependency, fieldNames, conditionTypes, fieldIsEmpty);
       }
     }
     return;
   }
 
-  _validateExprRoot(rule['when'], fieldNames, conditionTypes);
+  _validateExprRoot(rule['when'], fieldNames, conditionTypes, fieldIsEmpty);
 }
 
 void _validateDisablesRule(
   Map<String, dynamic> rule,
   Set<String> fieldNames,
   Map<String, String> conditionTypes,
+  Map<String, String> fieldIsEmpty,
 ) {
   if (!rule.containsKey('source') && !rule.containsKey('when')) {
     throw UmpireSchemaException(
@@ -288,7 +296,7 @@ void _validateDisablesRule(
     return;
   }
 
-  _validateExprRoot(rule['when'], fieldNames, conditionTypes);
+  _validateExprRoot(rule['when'], fieldNames, conditionTypes, fieldIsEmpty);
 }
 
 void _validateOneOfBranches(
@@ -400,6 +408,7 @@ void _validateExpression(
   dynamic expression,
   Set<String> fieldNames,
   Map<String, String> conditionTypes,
+  Map<String, String> fieldIsEmpty,
 ) {
   final record = _asRecord(expression, 'Expression');
   final op = record['op'];
@@ -412,7 +421,7 @@ void _validateExpression(
     case 'neq':
       _assertKnownMembers(record, const ['op', 'field', 'value'], 'Expression');
       _assertExprField(record['field'], fieldNames, op);
-      if (!_isJsonPrimitive(record['value'])) {
+      if (!isJsonPrimitive(record['value'])) {
         throw UmpireSchemaException(
           'Expression "$op" value must be a JSON primitive',
         );
@@ -442,6 +451,7 @@ void _validateExpression(
         'Expression',
       );
       _assertExprField(record['field'], fieldNames, op);
+      _assertScalarField(record['field'] as String, fieldIsEmpty, op);
       _assertPrimitiveList(record['values'], 'Expression "$op" values');
     case 'cond':
       _assertKnownMembers(record, const ['op', 'condition'], 'Expression');
@@ -453,7 +463,7 @@ void _validateExpression(
         'Expression',
       );
       _assertCondition(record, 'condEq');
-      if (!_isJsonPrimitive(record['value'])) {
+      if (!isJsonPrimitive(record['value'])) {
         throw UmpireSchemaException(
           'Expression "condEq" value must be a JSON primitive',
         );
@@ -473,6 +483,7 @@ void _validateExpression(
         'Expression',
       );
       _assertExprField(record['field'], fieldNames, 'fieldInCond');
+      _assertScalarField(record['field'] as String, fieldIsEmpty, 'fieldInCond');
       final condition = record['condition'];
       final conditionType =
           condition is String ? conditionTypes[condition] : null;
@@ -487,11 +498,12 @@ void _validateExpression(
       _assertKnownMembers(record, const ['op', 'exprs'], 'Expression');
       final exprs = _array(record, 'exprs', 'Expression "$op"');
       for (final entry in exprs) {
-        _validateExpression(entry, fieldNames, conditionTypes);
+        _validateExpression(entry, fieldNames, conditionTypes, fieldIsEmpty);
       }
     case 'not':
       _assertKnownMembers(record, const ['op', 'expr'], 'Expression');
-      _validateExpression(record['expr'], fieldNames, conditionTypes);
+      _validateExpression(
+          record['expr'], fieldNames, conditionTypes, fieldIsEmpty);
     case 'check':
       _assertKnownMembers(
         record,
@@ -510,6 +522,17 @@ void _validateExpression(
         'Expression',
       );
       _assertExprField(record['field'], fieldNames, 'contains');
+      if (!record.containsKey('value')) {
+        throw UmpireSchemaException(
+          'Expression "contains" requires a "value" member',
+        );
+      }
+      if (!isJsonPrimitive(record['value'])) {
+        throw UmpireSchemaException(
+          'Expression "contains" value must be a JSON primitive',
+        );
+      }
+      _assertArrayField(record['field'] as String, fieldIsEmpty, 'contains');
     default:
       throw UmpireSchemaException('Unknown expression op "$op"');
   }
@@ -521,8 +544,9 @@ void _validateExprRoot(
   dynamic expression,
   Set<String> fieldNames,
   Map<String, String> conditionTypes,
+  Map<String, String> fieldIsEmpty,
 ) {
-  _validateExpression(expression, fieldNames, conditionTypes);
+  _validateExpression(expression, fieldNames, conditionTypes, fieldIsEmpty);
   try {
     compileExpr(expression as Map<String, dynamic>, fieldNames: fieldNames);
   } on ArgumentError catch (e) {
@@ -559,8 +583,37 @@ void _assertExprField(dynamic field, Set<String> fieldNames, String op) {
   }
 }
 
+/// Membership ops that read a single scalar never target array-valued fields.
+void _assertScalarField(
+  String field,
+  Map<String, String> fieldIsEmpty,
+  String op,
+) {
+  if (fieldIsEmpty[field] == 'array') {
+    throw UmpireSchemaException(
+      '"$op" requires a scalar field; '
+      '"$field" is declared with "isEmpty": "array"',
+    );
+  }
+}
+
+/// `contains` needs an array, and rejects fields declared as another value kind.
+void _assertArrayField(
+  String field,
+  Map<String, String> fieldIsEmpty,
+  String op,
+) {
+  final strategy = fieldIsEmpty[field];
+  if (strategy != null && strategy != 'array' && strategy != 'present') {
+    throw UmpireSchemaException(
+      '"$op" requires an array field; '
+      '"$field" is declared with "isEmpty": "$strategy"',
+    );
+  }
+}
+
 void _assertPrimitiveList(dynamic values, String context) {
-  if (values is! List || !values.every(_isJsonPrimitive)) {
+  if (values is! List || !values.every(isJsonPrimitive)) {
     throw UmpireSchemaException(
       '$context must be an array of JSON primitives',
     );
@@ -587,9 +640,6 @@ void _assertString(dynamic value, String context) {
     throw UmpireSchemaException('$context must be a string');
   }
 }
-
-bool _isJsonPrimitive(dynamic value) =>
-    value == null || value is String || value is num || value is bool;
 
 Map<String, dynamic> _asRecord(dynamic value, String context) {
   if (value is! Map<String, dynamic>) {

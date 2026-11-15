@@ -62,6 +62,20 @@ void main() {
           pred({'planId': 'pro'}, {'validPlans': 'not-a-list'}), isFalse);
     });
 
+    test('fieldInCond does not coerce scalars and never reads an array value',
+        () {
+      final pred = compileExpr(
+        {'op': 'fieldInCond', 'field': 'planId', 'condition': 'validPlans'},
+        fieldNames: fieldNames,
+      );
+
+      expect(pred({'planId': true}, {'validPlans': [1]}), isFalse);
+      expect(pred({'planId': 1}, {'validPlans': [true]}), isFalse);
+      expect(pred({'planId': '22'}, {'validPlans': [22]}), isFalse);
+      expect(pred({'planId': 22}, {'validPlans': [22.0]}), isTrue);
+      expect(pred({'planId': [1]}, {'validPlans': [1]}), isFalse);
+    });
+
     test('condIn vs fieldInCond distinction', () {
       final condInPred = compileExpr(
         {'op': 'condIn', 'condition': 'tier', 'values': ['pro', 'team']},
@@ -97,6 +111,26 @@ void main() {
       );
       expect(pred({'accountType': 'personal'}, {}), isTrue);
       expect(pred({'accountType': 'business'}, {}), isFalse);
+    });
+
+    test('contains, in, and notIn compare numbers by value', () {
+      final contains = compileExpr(
+        {'op': 'contains', 'field': 'planId', 'value': 22},
+        fieldNames: fieldNames,
+      );
+      expect(contains({'planId': [22.0]}, {}), isTrue);
+
+      final isIn = compileExpr(
+        {'op': 'in', 'field': 'planId', 'values': [22]},
+        fieldNames: fieldNames,
+      );
+      expect(isIn({'planId': 22.0}, {}), isTrue);
+
+      final notIn = compileExpr(
+        {'op': 'notIn', 'field': 'planId', 'values': [22]},
+        fieldNames: fieldNames,
+      );
+      expect(notIn({'planId': 22.0}, {}), isFalse);
     });
 
     test('truthy: returns true for truthy values', () {
