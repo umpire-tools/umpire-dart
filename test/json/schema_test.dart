@@ -391,6 +391,153 @@ void main() {
       );
     });
 
+    test('rejects contains on a field declared as a non-array kind', () {
+      Map<String, dynamic> schema(String fieldIsEmpty) => {
+            'version': 1,
+            'fields': {
+              'tags': {'isEmpty': fieldIsEmpty},
+              'note': <String, dynamic>{},
+            },
+            'rules': [
+              {
+                'type': 'enabledWhen',
+                'field': 'note',
+                'when': {'op': 'contains', 'field': 'tags', 'value': 'urgent'},
+              }
+            ],
+          };
+
+      for (final kind in const ['string', 'object']) {
+        expect(
+          () => UmpireSchema.fromJson(schema(kind)),
+          throwsA(isA<UmpireSchemaException>().having((e) => e.message,
+              'message', contains('"contains" requires an array field'))),
+          reason: 'isEmpty: $kind',
+        );
+      }
+    });
+
+    test('builds contains on a field declared with isEmpty present', () {
+      final json = {
+        'version': 1,
+        'fields': {
+          'tags': {'isEmpty': 'present'},
+          'note': <String, dynamic>{},
+        },
+        'rules': [
+          {
+            'type': 'enabledWhen',
+            'field': 'note',
+            'when': {'op': 'contains', 'field': 'tags', 'value': 'urgent'},
+          }
+        ],
+      };
+      final ump = UmpireSchema.fromJson(json).build();
+
+      expect(ump.check({'tags': ['urgent']})['note']!.enabled, isTrue);
+      expect(ump.check({'tags': ['routine']})['note']!.enabled, isFalse);
+    });
+
+    test('rejects in and notIn on a field declared as an array', () {
+      Map<String, dynamic> schema(String op) => {
+            'version': 1,
+            'fields': {
+              'tags': {'isEmpty': 'array'},
+              'note': <String, dynamic>{},
+            },
+            'rules': [
+              {
+                'type': 'enabledWhen',
+                'field': 'note',
+                'when': {
+                  'op': op,
+                  'field': 'tags',
+                  'values': ['urgent'],
+                },
+              }
+            ],
+          };
+
+      for (final op in const ['in', 'notIn']) {
+        expect(
+          () => UmpireSchema.fromJson(schema(op)),
+          throwsA(isA<UmpireSchemaException>().having((e) => e.message,
+              'message', contains('"$op" requires a scalar field'))),
+          reason: op,
+        );
+      }
+    });
+
+    test('rejects fieldInCond on a field declared as an array', () {
+      final json = {
+        'version': 1,
+        'conditions': {
+          'plans': {'type': 'string[]'},
+        },
+        'fields': {
+          'tags': {'isEmpty': 'array'},
+          'note': <String, dynamic>{},
+        },
+        'rules': [
+          {
+            'type': 'enabledWhen',
+            'field': 'note',
+            'when': {
+              'op': 'fieldInCond',
+              'field': 'tags',
+              'condition': 'plans',
+            },
+          }
+        ],
+      };
+
+      expect(
+        () => UmpireSchema.fromJson(json),
+        throwsA(isA<UmpireSchemaException>().having((e) => e.message,
+            'message', contains('"fieldInCond" requires a scalar field'))),
+      );
+    });
+
+    test('rejects in on an array field nested in an anyOf rule', () {
+      final json = {
+        'version': 1,
+        'fields': {
+          'tags': {'isEmpty': 'array'},
+          'status': {'isEmpty': 'string'},
+          'note': <String, dynamic>{},
+        },
+        'rules': [
+          {
+            'type': 'anyOf',
+            'rules': [
+              {
+                'type': 'enabledWhen',
+                'field': 'note',
+                'when': {'op': 'present', 'field': 'status'},
+              },
+              {
+                'type': 'enabledWhen',
+                'field': 'note',
+                'when': {
+                  'op': 'in',
+                  'field': 'tags',
+                  'values': ['urgent'],
+                },
+              },
+            ],
+          }
+        ],
+      };
+
+      expect(
+        () => UmpireSchema.fromJson(json),
+        throwsA(isA<UmpireSchemaException>().having(
+            (e) => e.message,
+            'message',
+            contains('"in" requires a scalar field'))),
+      );
+    });
+
     test('accepts a whole-number double for minLength and maxLength', () {
       final json = {
         'version': 1,
