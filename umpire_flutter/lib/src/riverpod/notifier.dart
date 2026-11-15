@@ -55,9 +55,11 @@ class UmpireNotifier extends StateNotifier<UmpireState> {
     Map<String, dynamic>? conditions,
   }) {
     final prevAvailability = state.availability;
+    final prevValues = state.values;
     final nextValues = values ?? state.values;
     final nextConditions = conditions ?? state.conditions;
-    final nextAvailability = _ump.check(nextValues, conditions: nextConditions);
+    final nextAvailability =
+        _ump.check(nextValues, conditions: nextConditions, prev: prevValues);
     final fouls = _ump.play(
       before: prevAvailability,
       after: nextAvailability,

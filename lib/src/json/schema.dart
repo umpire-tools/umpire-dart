@@ -10,16 +10,13 @@ import '../rules/one_of.dart';
 import '../rules/requires.dart';
 import '../rules/rule.dart';
 import '../umpire.dart';
+import 'check_op.dart';
 import 'condition_provider.dart';
+import 'errors.dart';
 import 'expr.dart';
+import 'validate.dart';
 
-class UmpireSchemaException implements Exception {
-  final String message;
-  UmpireSchemaException(this.message);
-
-  @override
-  String toString() => 'UmpireSchemaException: $message';
-}
+export 'errors.dart';
 
 class ConditionDef {
   final String type;
@@ -33,7 +30,6 @@ class JsonRule {
   final String? reason;
   final String? group;
   final Map<String, List<String>>? branches;
-  final String? activeBranch;
   final List<String>? targets;
   final String? source;
   final String? op;
@@ -50,7 +46,6 @@ class JsonRule {
     this.reason,
     this.group,
     this.branches,
-    this.activeBranch,
     this.targets,
     this.source,
     this.op,
@@ -80,15 +75,9 @@ class UmpireSchema {
   });
 
   factory UmpireSchema.fromJson(Map<String, dynamic> json) {
-    try {
-      final version = json['version'];
-      if (version == null || version != 1) {
-        throw UmpireSchemaException(
-          'Unsupported schema version $version. '
-          'This runtime supports version 1.',
-        );
-      }
+    validateSchemaJson(json);
 
+    try {
       final conditions = <String, ConditionDef>{};
       if (json['conditions'] != null) {
         final condsJson = json['conditions'] as Map<String, dynamic>;
@@ -107,22 +96,17 @@ class UmpireSchema {
           final fieldMap = entry.value as Map<String, dynamic>;
           fields[entry.key] = FieldDef(
             required: fieldMap['required'] as bool? ?? false,
-            defaultValue: fieldMap['defaultValue'],
+            defaultValue: fieldMap['default'],
             isEmpty: _parseIsEmptyStrategy(fieldMap['isEmpty'] as String?),
           );
         }
       }
 
-      final fieldNamesSet = fields.keys.toSet();
-
       final jsonRules = <JsonRule>[];
       if (json['rules'] != null) {
         final rulesList = json['rules'] as List<dynamic>;
         for (final ruleData in rulesList) {
-          final parsed = _parseJsonRule(ruleData as Map<String, dynamic>);
-          _validateRuleFields(parsed, fieldNamesSet);
-          _validateRuleConditions(parsed, conditions);
-          jsonRules.add(parsed);
+          jsonRules.add(_parseJsonRule(ruleData as Map<String, dynamic>));
         }
       }
 
@@ -144,7 +128,7 @@ class UmpireSchema {
       }
 
       return UmpireSchema._(
-        version: version as int,
+        version: json['version'] as int,
         conditions: conditions,
         fields: fields,
         rules: jsonRules,
@@ -203,8 +187,7 @@ class UmpireSchema {
     for (final entry in validators.entries) {
       final vMap = entry.value as Map<String, dynamic>?;
       if (vMap == null) continue;
-      final op = _parseCheckOp(
-          vMap['op'] as String?, vMap['params'] as Map<String, dynamic>?);
+      final op = parseCheckOp(vMap['op'] as String?, vMap);
       compiledValidators[entry.key] = ValidatorEntry(
         op: op,
         error: vMap['error'] as String? ?? 'Invalid value',
@@ -287,10 +270,6 @@ class UmpireSchema {
         );
 
       case 'disables':
-        if (jsonRule.source == null && jsonRule.when == null) {
-          throw UmpireSchemaException(
-              'disables rule requires "source", "field", or "when"');
-        }
         if (jsonRule.targets == null || jsonRule.targets!.isEmpty) {
           throw UmpireSchemaException(
               'disables rule requires non-empty "targets"');
@@ -314,12 +293,7 @@ class UmpireSchema {
         );
 
       case 'oneOf':
-        return oneOf(
-          jsonRule.group!,
-          jsonRule.branches!,
-          activeBranch: jsonRule.activeBranch,
-          reason: jsonRule.reason,
-        );
+        return oneOf(jsonRule.group!, jsonRule.branches!);
 
       case 'check':
         final op = jsonRule.validator as CheckOp;
@@ -340,19 +314,11 @@ class UmpireSchema {
               })
               .toList();
         }
-        return eitherOf(
-          jsonRule.group!,
-          compiledBranches,
-          reason: jsonRule.reason,
-        );
+        return eitherOf(jsonRule.group!, compiledBranches);
 
       case 'anyOf':
         final compiledSubRules = jsonRule.subRuleData!
-            .map((raw) {
-              final parsed = _parseJsonRule(raw);
-              _validateRuleFields(parsed, fieldNamesSet);
-              return _buildRule(parsed, fieldNamesSet);
-            })
+            .map((raw) => _buildRule(_parseJsonRule(raw), fieldNamesSet))
             .toList();
         return anyOf(compiledSubRules);
 
@@ -361,154 +327,6 @@ class UmpireSchema {
           'Unknown rule type: "${jsonRule.type}"',
         );
     }
-  }
-}
-
-void _validateRuleFields(JsonRule rule, Set<String> fieldNames) {
-  // Validate field references
-  if (rule.field != null && !fieldNames.contains(rule.field)) {
-    throw UmpireSchemaException(
-        'Unknown field "${rule.field}" in ${rule.type} rule');
-  }
-  if (rule.source != null && !fieldNames.contains(rule.source)) {
-    throw UmpireSchemaException(
-        'Unknown field "${rule.source}" in ${rule.type} rule');
-  }
-  if (rule.targets != null) {
-    for (final t in rule.targets!) {
-      if (!fieldNames.contains(t)) {
-        throw UmpireSchemaException(
-            'Unknown field "$t" in ${rule.type} rule');
-      }
-    }
-  }
-  if (rule.branches != null) {
-    for (final fields in rule.branches!.values) {
-      for (final f in fields) {
-        if (!fieldNames.contains(f)) {
-          throw UmpireSchemaException(
-              'Unknown field "$f" in ${rule.type} rule');
-        }
-      }
-    }
-  }
-  if (rule.when != null) {
-    _validateExprFields(rule.when!, fieldNames);
-  }
-  if (rule.rawBranches != null) {
-    for (final subRules in rule.rawBranches!.values) {
-      for (final subRule in subRules) {
-        _validateExprFieldsInRuleMap(subRule, fieldNames);
-      }
-    }
-  }
-  if (rule.subRuleData != null) {
-    for (final subRule in rule.subRuleData!) {
-      _validateExprFieldsInRuleMap(subRule, fieldNames);
-    }
-  }
-}
-
-void _validateExprFieldsInRuleMap(
-    Map<String, dynamic> data, Set<String> fieldNames) {
-  if (data['field'] != null && !fieldNames.contains(data['field'])) {
-    throw UmpireSchemaException(
-        'Unknown field "${data['field']}" in rule expression');
-  }
-  if (data['when'] != null) {
-    _validateExprFields(data['when'] as Map<String, dynamic>, fieldNames);
-  }
-}
-
-void _validateExprFields(Map<String, dynamic> expr, Set<String> fieldNames) {
-  final op = expr['op'] as String?;
-  final field = expr['field'] as String?;
-  if (field != null && !fieldNames.contains(field)) {
-    throw UmpireSchemaException('Unknown field "$field" in expression');
-  }
-
-  // Validate check expressions eagerly for invalid regex patterns
-  if (op == 'check') {
-    final check = expr['check'] as Map<String, dynamic>?;
-    if (check != null) {
-      final checkOp = check['op'] as String?;
-      if (checkOp == 'matches') {
-        final pattern = check['pattern'] as String?;
-        if (pattern != null) {
-          try {
-            RegExp(pattern);
-          } on FormatException catch (e) {
-            throw UmpireSchemaException(
-                'Invalid regex pattern in check expression: ${e.message}');
-          }
-        }
-      }
-    }
-  }
-
-  final exprs = expr['exprs'] as List?;
-  if (exprs != null) {
-    for (final e in exprs) {
-      _validateExprFields(e as Map<String, dynamic>, fieldNames);
-    }
-  }
-
-  final subExpr = expr['expr'] as Map<String, dynamic>?;
-  if (subExpr != null) {
-    _validateExprFields(subExpr, fieldNames);
-  }
-}
-
-void _validateRuleConditions(
-    JsonRule rule, Map<String, ConditionDef> conditions) {
-  if (rule.when != null) {
-    _validateExprConditions(rule.when!, conditions);
-  }
-  if (rule.rawBranches != null) {
-    for (final subRules in rule.rawBranches!.values) {
-      for (final subRule in subRules) {
-        if (subRule['when'] != null) {
-          _validateExprConditions(
-              subRule['when'] as Map<String, dynamic>, conditions);
-        }
-      }
-    }
-  }
-  if (rule.subRuleData != null) {
-    for (final subRule in rule.subRuleData!) {
-      if (subRule['when'] != null) {
-        _validateExprConditions(
-            subRule['when'] as Map<String, dynamic>, conditions);
-      }
-    }
-  }
-}
-
-void _validateExprConditions(
-    Map<String, dynamic> expr, Map<String, ConditionDef> conditions) {
-  final op = expr['op'] as String?;
-  final condition = expr['condition'] as String?;
-
-  if (op == 'fieldInCond' && condition != null) {
-    final condDef = conditions[condition];
-    if (condDef == null || !condDef.type.endsWith('[]')) {
-      throw UmpireSchemaException(
-        '"fieldInCond" expression references condition "$condition", '
-        'which must be an array condition.',
-      );
-    }
-  }
-
-  final exprs = expr['exprs'] as List?;
-  if (exprs != null) {
-    for (final e in exprs) {
-      _validateExprConditions(e as Map<String, dynamic>, conditions);
-    }
-  }
-
-  final subExpr = expr['expr'] as Map<String, dynamic>?;
-  if (subExpr != null) {
-    _validateExprConditions(subExpr, conditions);
   }
 }
 
@@ -570,7 +388,7 @@ JsonRule _parseJsonRule(Map<String, dynamic> data) {
     case 'disables':
       return JsonRule(
         type: type,
-        source: (data['field'] ?? data['source']) as String?,
+        source: data['source'] as String?,
         targets: (data['targets'] as List<dynamic>?)?.cast<String>(),
         when: data['when'] as Map<String, dynamic>?,
         reason: data['reason'] as String?,
@@ -585,29 +403,17 @@ JsonRule _parseJsonRule(Map<String, dynamic> data) {
         type: type,
         group: data['group'] as String?,
         branches: branches,
-        activeBranch: data['activeBranch'] as String?,
-        reason: data['reason'] as String?,
       );
 
     case 'check':
+      // Check parameters are flat on the rule and validator spec.
       final op = data['op'] as String?;
-      var params = data['params'] as Map<String, dynamic>?;
-      // Conformance fixtures use flat params at the rule level
-      if (params == null && data.containsKey('pattern')) {
-        params = data;
-      }
-      if (params == null && data.containsKey('value')) {
-        params = data;
-      }
-      if (params == null && data.containsKey('min')) {
-        params = data;
-      }
       return JsonRule(
         type: type,
         field: data['field'] as String?,
         op: op,
         reason: data['reason'] as String?,
-        validator: _parseCheckOp(op, params),
+        validator: parseCheckOp(op, data),
       );
 
     case 'eitherOf':
@@ -620,7 +426,6 @@ JsonRule _parseJsonRule(Map<String, dynamic> data) {
       return JsonRule(
         type: type,
         group: data['group'] as String?,
-        reason: data['reason'] as String?,
         rawBranches: rawBranches,
       );
 
@@ -628,75 +433,11 @@ JsonRule _parseJsonRule(Map<String, dynamic> data) {
       final rulesList = data['rules'] as List<dynamic>?;
       return JsonRule(
         type: type,
-        reason: data['reason'] as String?,
         subRuleData:
             (rulesList ?? []).cast<Map<String, dynamic>>(),
       );
 
     default:
       throw UmpireSchemaException('Unknown rule type: "$type"');
-  }
-}
-
-CheckOp _parseCheckOp(String? op, Map<String, dynamic>? params) {
-  if (op == null) {
-    throw UmpireSchemaException('Check rule missing "op" field');
-  }
-
-  switch (op) {
-    case 'email':
-      return checkOps.email();
-    case 'url':
-      return checkOps.url();
-    case 'matches':
-      final pattern = params?['pattern'] as String?;
-      if (pattern == null) {
-        throw UmpireSchemaException(
-          'Check "matches" requires "pattern"',
-        );
-      }
-      return checkOps.matches(RegExp(pattern));
-    case 'minLength':
-      final min = params?['min'] ?? params?['value'];
-      if (min == null) {
-        throw UmpireSchemaException(
-          'Check "minLength" requires "min" or "value"',
-        );
-      }
-      return checkOps.minLength(min as int);
-    case 'maxLength':
-      final max = params?['max'] ?? params?['value'];
-      if (max == null) {
-        throw UmpireSchemaException(
-          'Check "maxLength" requires "max" or "value"',
-        );
-      }
-      return checkOps.maxLength(max as int);
-    case 'min':
-      final minVal = params?['min'] ?? params?['value'];
-      if (minVal == null) {
-        throw UmpireSchemaException('Check "min" requires "min" or "value"');
-      }
-      return checkOps.min(minVal as num);
-    case 'max':
-      final maxVal = params?['max'] ?? params?['value'];
-      if (maxVal == null) {
-        throw UmpireSchemaException('Check "max" requires "max" or "value"');
-      }
-      return checkOps.max(maxVal as num);
-    case 'range':
-      if (params == null || params['min'] == null || params['max'] == null) {
-        throw UmpireSchemaException(
-          'Check "range" requires "min" and "max"',
-        );
-      }
-      return checkOps.range(
-        params['min'] as num,
-        params['max'] as num,
-      );
-    case 'integer':
-      return checkOps.integer();
-    default:
-      throw UmpireSchemaException('Unknown check op: "$op"');
   }
 }

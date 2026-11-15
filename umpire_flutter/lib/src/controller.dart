@@ -55,10 +55,12 @@ class UmpireController extends ChangeNotifier {
     Map<String, dynamic>? values,
     Map<String, dynamic>? conditions,
   }) {
+    final previousValues = _values;
     _prevAvailability = _availability;
     if (values != null) _values = values;
     if (conditions != null) _conditions = conditions;
-    _availability = _ump.check(_values, conditions: _conditions);
+    _availability =
+        _ump.check(_values, conditions: _conditions, prev: previousValues);
     _fouls = _ump.play(
       before: _prevAvailability!,
       after: _availability,

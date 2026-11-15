@@ -38,8 +38,10 @@ UmpireHookResult useUmpire(
   final values = useState(initialValues);
   final conds = useState(conditions);
 
+  final prevValues = usePrevious(values.value);
+
   final availability = useMemoized(
-    () => ump.check(values.value, conditions: conds.value),
+    () => ump.check(values.value, conditions: conds.value, prev: prevValues),
     [values.value, conds.value],
   );
 

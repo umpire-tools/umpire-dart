@@ -2,6 +2,19 @@ import 'package:test/test.dart';
 import 'package:umpire/umpire.dart' hide anyOf;
 import 'package:umpire/src/rules/any_of.dart' as umpire_rules;
 
+Umpire _twoBranchUmp() => umpire(
+      fields: {
+        'phone': FieldDef(isEmpty: IsEmptyStrategy.string),
+        'signal': FieldDef(isEmpty: IsEmptyStrategy.string),
+      },
+      rules: [
+        oneOf('contact', {
+          'phone': ['phone'],
+          'signal': ['signal'],
+        }),
+      ],
+    );
+
 void main() {
   group('disables rule', () {
     test('disables with when predicate (not just source satisfaction)', () {
@@ -47,6 +60,41 @@ void main() {
       final avail = ump.check({'email': 'a@b.com', 'sms': '+123'});
       expect(avail['email']!.enabled, isFalse);
       expect(avail['sms']!.enabled, isTrue);
+    });
+
+    test('oneOf resolves ambiguity from prev when one branch is new', () {
+      final ump = _twoBranchUmp();
+
+      final values = {'phone': 'call', 'signal': 'wave'};
+
+      final withPrev = ump.check(values, prev: {'phone': 'call'});
+      expect(withPrev['phone']!.enabled, isFalse);
+      expect(withPrev['signal']!.enabled, isTrue);
+      expect(withPrev['phone']!.reason, 'conflicts with signal strategy');
+
+      // An explicit empty snapshot leaves both branches newly satisfied, so
+      // the first one wins.
+      final emptyPrev = ump.check(values, prev: {});
+      expect(emptyPrev['phone']!.enabled, isTrue);
+      expect(emptyPrev['signal']!.enabled, isFalse);
+    });
+
+    test('oneOf falls back to the first satisfied branch without prev', () {
+      final avail = _twoBranchUmp().check({'phone': 'call', 'signal': 'wave'});
+
+      expect(avail['phone']!.enabled, isTrue);
+      expect(avail['signal']!.enabled, isFalse);
+      expect(avail['signal']!.reason, 'conflicts with phone strategy');
+    });
+
+    test('oneOf branch detection honours the field isEmpty strategy', () {
+      // An empty string is unsatisfied for a string field, so the branch
+      // holding it is inactive even though the key is present.
+      final avail = _twoBranchUmp().check({'phone': '', 'signal': 'x'});
+
+      expect(avail['phone']!.enabled, isFalse);
+      expect(avail['signal']!.enabled, isTrue);
+      expect(avail['phone']!.reason, 'conflicts with signal strategy');
     });
 
     test('oneOf with empty branch should throw', () {

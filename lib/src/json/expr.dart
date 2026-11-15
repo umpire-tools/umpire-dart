@@ -1,4 +1,6 @@
 import '../rules/rule.dart';
+import 'check_op.dart';
+import 'errors.dart';
 
 const _maxExprDepth = 50;
 
@@ -11,88 +13,23 @@ bool _truthy(dynamic v) {
   return true;
 }
 
+/// Compiles a `check` expression's validator spec through [parseCheckOp], so a
+/// check reaches the same verdict whether it arrives as a `check` rule or a
+/// `check` expression.
+///
+/// [parseCheckOp] reports schema-shaped failures; they surface here as
+/// [ArgumentError] like every other malformed expression.
 bool Function(dynamic) _compileCheck(Map<String, dynamic> check) {
-  final op = check['op'] as String?;
-  switch (op) {
-    case 'email':
-      return (v) {
-        if (v is! String || v.isEmpty) return false;
-        return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(v);
-      };
-    case 'url':
-      return (v) {
-        if (v is! String || v.isEmpty) return false;
-        final uri = Uri.tryParse(v);
-        return uri != null && uri.hasScheme && uri.hasAuthority;
-      };
-    case 'matches':
-      final pattern = check['pattern'] as String?;
-      if (pattern == null) {
-        throw ArgumentError('Check "matches" requires a "pattern" parameter');
-      }
-      try {
-        final regex = RegExp(pattern);
-        return (v) {
-          if (v is! String) return false;
-          return regex.hasMatch(v);
-        };
-      } on FormatException catch (e) {
-        throw ArgumentError(
-            'Invalid regex pattern in "matches" check: $pattern — ${e.message}');
-      }
-    case 'minLength':
-      final min = (check['min'] ?? check['value']) as num?;
-      if (min == null) {
-        throw ArgumentError('Check "minLength" requires a "min" parameter');
-      }
-      return (v) {
-        if (v is! String) return false;
-        return v.length >= min;
-      };
-    case 'maxLength':
-      final max = (check['max'] ?? check['value']) as num?;
-      if (max == null) {
-        throw ArgumentError('Check "maxLength" requires a "max" parameter');
-      }
-      return (v) {
-        if (v is! String) return false;
-        return v.length <= max;
-      };
-    case 'min':
-      final minValue = (check['min'] ?? check['value']) as num?;
-      if (minValue == null) {
-        throw ArgumentError('Check "min" requires a "min" parameter');
-      }
-      return (v) {
-        if (v is! num) return false;
-        return v >= minValue;
-      };
-    case 'max':
-      final maxValue = (check['max'] ?? check['value']) as num?;
-      if (maxValue == null) {
-        throw ArgumentError('Check "max" requires a "max" parameter');
-      }
-      return (v) {
-        if (v is! num) return false;
-        return v <= maxValue;
-      };
-    case 'range':
-      final minValue = check['min'] as num?;
-      final maxValue = check['max'] as num?;
-      if (minValue == null || maxValue == null) {
-        throw ArgumentError('Check "range" requires "min" and "max" parameters');
-      }
-      return (v) {
-        if (v is! num) return false;
-        return v >= minValue && v <= maxValue;
-      };
-    case 'integer':
-      return (v) {
-        if (v is! num) return false;
-        return v == v.roundToDouble();
-      };
-    default:
-      throw ArgumentError('Unknown check op: "$op"');
+  final op = check['op'];
+  try {
+    return parseCheckOp(op is String ? op : null, check).validate;
+  } on UmpireSchemaException catch (e) {
+    throw ArgumentError(e.message);
+  } on FormatException catch (e) {
+    throw ArgumentError(
+      'Invalid regex pattern in "matches" check: '
+      '${check['pattern']} — ${e.message}',
+    );
   }
 }
 

@@ -49,13 +49,18 @@ void main() {
             UmpireSchema.fromJson(fixtureData['schema'] as Map<String, dynamic>);
         final ump = schema.build();
 
-        final cases = fixtureData['cases'] as List<dynamic>;
+        final cases = fixtureData['cases'] as List<dynamic>? ?? const [];
+        if (cases.isEmpty) {
+          fail('fixture[$fi] has no cases');
+        }
         for (var ci = 0; ci < cases.length; ci++) {
           final c = cases[ci] as Map<String, dynamic>;
           final values = c['values'] as Map<String, dynamic>? ?? {};
           final conditions = c['conditions'] as Map<String, dynamic>? ?? {};
+          final prev = c['prev'] as Map<String, dynamic>?;
 
-          final availability = ump.check(values, conditions: conditions);
+          final availability =
+              ump.check(values, conditions: conditions, prev: prev);
 
           final actualMap = <String, Map<String, dynamic>>{};
           for (final entry in availability.entries) {
@@ -81,13 +86,15 @@ void main() {
           final f = failures[i] as Map<String, dynamic>;
           final phase = f['phase'] as String;
 
+          final where = 'Failure fixture[$fi] case[$i] {${f['id']}}';
+
           if (phase == 'validate') {
-            expect(
+            _expectThrowsWithMessage(
               () => UmpireSchema.fromJson(
                   f['schema'] as Map<String, dynamic>),
-              throwsA(anyOf(isA<UmpireSchemaException>(), isA<ArgumentError>())),
-              reason:
-                  'Failure fixture[$fi] case[$i]: expected UmpireSchema.fromJson to throw',
+              f['errorIncludes'] as String?,
+              where,
+              matcher: isA<UmpireSchemaException>(),
             );
           } else if (phase == 'evaluate') {
             final schema = UmpireSchema.fromJson(
@@ -97,12 +104,14 @@ void main() {
             final conditions =
                 f['conditions'] as Map<String, dynamic>? ?? {};
 
-            expect(
+            _expectThrowsWithMessage(
               () => ump.check(values, conditions: conditions),
-              throwsA(anyOf(isA<Exception>(), isA<ArgumentError>())),
-              reason:
-                  'Failure fixture[$fi] case[$i]: expected ump.check() to throw',
+              f['errorIncludes'] as String?,
+              where,
+              matcher: anyOf(isA<Exception>(), isA<ArgumentError>()),
             );
+          } else {
+            fail('$where: unknown failure phase "$phase"');
           }
         }
       }
@@ -115,6 +124,13 @@ void _compareAvailability(
   Map<String, dynamic> actual,
   String context,
 ) {
+  final extraFields = actual.keys.toSet().difference(expected.keys.toSet());
+  expect(
+    extraFields,
+    isEmpty,
+    reason: '$context: fields missing from expectedAvailability $extraFields',
+  );
+
   for (final fieldEntry in expected.entries) {
     final field = fieldEntry.key;
     final expectedField = fieldEntry.value as Map<String, dynamic>;
@@ -147,6 +163,40 @@ void _compareAvailability(
         );
       }
     }
+
+    expect(
+      actualField.keys.toSet().difference(expectedField.keys.toSet()),
+      isEmpty,
+      reason: '$context, field "$field": unexpected status members',
+    );
+  }
+}
+
+/// Asserts that [body] throws, that the thrown object matches [matcher] when
+/// one is given, and that the error message contains [errorIncludes] when the
+/// fixture pins one.
+void _expectThrowsWithMessage(
+  void Function() body,
+  String? errorIncludes,
+  String context, {
+  Matcher? matcher,
+}) {
+  Object? thrown;
+  try {
+    body();
+  } catch (error) {
+    thrown = error;
+  }
+
+  expect(thrown, isNotNull, reason: '$context: expected a thrown error');
+
+  if (matcher != null) {
+    expect(thrown, matcher, reason: '$context: unexpected error type');
+  }
+
+  if (errorIncludes != null) {
+    expect(thrown.toString(), contains(errorIncludes),
+        reason: '$context: error message must include "$errorIncludes"');
   }
 }
 

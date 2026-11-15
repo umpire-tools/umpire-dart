@@ -1,10 +1,15 @@
-import 'rule.dart';
+import '../field_def.dart';
 import '../satisfaction.dart';
+import 'rule.dart';
 
 /// Only one branch of fields can be enabled at a time.
 ///
-/// The active branch is detected automatically (first branch with a satisfied
-/// field). Pass [activeBranch] to override detection.
+/// The active branch is detected automatically as the only branch holding a
+/// satisfied field. When several branches are satisfied at once, the prior
+/// snapshot [prev] decides: a branch that became satisfied since [prev] wins.
+/// Without that signal the first satisfied branch is used.
+///
+/// Pass [activeBranch] to override detection.
 Rule oneOf(
   String group,
   Map<String, List<String>> branches, {
@@ -45,18 +50,41 @@ Rule oneOf(
     );
   }
 
-  String? _detectActiveBranch(
+  bool branchSatisfied(
+    String name,
+    Map<String, dynamic>? values,
+    Map<String, FieldDef>? fieldDefs,
+  ) {
+    if (values == null) return false;
+    return branches[name]!.any(
+      (field) => isSatisfied(values[field], fieldDefs?[field]),
+    );
+  }
+
+  String? detectActiveBranch(
     Map<String, dynamic> values,
-    Map<String, dynamic>? fields,
+    Map<String, dynamic>? prev,
+    Map<String, FieldDef>? fieldDefs,
   ) {
     if (activeBranch != null) return activeBranch;
 
-    final satisfiedBranches = branchNames.where((name) {
-      return branches[name]!.any((f) => isSatisfied(values[f], null));
-    }).toList();
+    final satisfiedBranches = branchNames
+        .where((name) => branchSatisfied(name, values, fieldDefs))
+        .toList();
 
     if (satisfiedBranches.isEmpty) return null;
-    return satisfiedBranches.last;
+    if (satisfiedBranches.length == 1) return satisfiedBranches.first;
+
+    if (prev != null) {
+      final newlySatisfiedBranches = satisfiedBranches
+          .where((name) => !branchSatisfied(name, prev, fieldDefs))
+          .toList();
+      if (newlySatisfiedBranches.length == 1) {
+        return newlySatisfiedBranches.first;
+      }
+    }
+
+    return satisfiedBranches.first;
   }
 
   return Rule(
@@ -64,7 +92,7 @@ Rule oneOf(
     targets: targets,
     sources: targets,
     evaluate: (values, conditions, [prev, fields, availability]) {
-      final detected = _detectActiveBranch(values, fields);
+      final detected = detectActiveBranch(values, prev, fields);
 
       if (detected == null) {
         return Map.fromEntries(

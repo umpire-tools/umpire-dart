@@ -509,6 +509,31 @@ void main() {
       expect(personal['companyName']!.enabled, isFalse);
       expect(personal['companyName']!.required, isFalse);
     });
+
+    test('validators report nothing for a disabled field', () {
+      final ump = umpire(
+        fields: {'email': FieldDef()},
+        rules: [
+          enabledWhen('email', predicate: (v, c) => c['on'] == true),
+        ],
+        validators: {
+          'email': ValidatorEntry(
+            op: checkOps.email(),
+            error: 'Enter a valid email address',
+          ),
+        },
+      );
+
+      final disabled = ump.check({'email': 'not-an-email'},
+          conditions: {'on': false});
+      expect(disabled['email']!.valid, isNull);
+      expect(disabled['email']!.error, isNull);
+
+      final enabled = ump.check({'email': 'not-an-email'},
+          conditions: {'on': true});
+      expect(enabled['email']!.valid, isFalse);
+      expect(enabled['email']!.error, 'Enter a valid email address');
+    });
   });
 
   group('Umpire.check() — gate vs fair precedence', () {
