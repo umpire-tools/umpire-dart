@@ -132,6 +132,140 @@ void main() {
       );
     });
 
+    test('rejects undeclared members in nested rules and expressions', () {
+      void expectNestedRejection(Map<String, dynamic> rule) {
+        expect(
+          () => UmpireSchema.fromJson({
+            'version': 1,
+            'fields': {'a': <String, dynamic>{}, 'b': <String, dynamic>{}},
+            'rules': [rule],
+          }),
+          throwsA(isA<UmpireSchemaException>()
+              .having((e) => e.message, 'message', contains('unexpected'))),
+        );
+      }
+
+      expectNestedRejection({
+        'type': 'anyOf',
+        'rules': [
+          {
+            'type': 'enabledWhen',
+            'field': 'a',
+            'when': {'op': 'truthy', 'field': 'b'},
+            'unexpected': true,
+          },
+        ],
+      });
+
+      expectNestedRejection({
+        'type': 'eitherOf',
+        'group': 'g',
+        'branches': {
+          'x': [
+            {
+              'type': 'requires',
+              'field': 'a',
+              'dependency': 'b',
+              'unexpected': true,
+            },
+          ],
+        },
+      });
+
+      expectNestedRejection({
+        'type': 'enabledWhen',
+        'field': 'a',
+        'when': {
+          'op': 'and',
+          'exprs': [
+            {'op': 'truthy', 'field': 'b', 'unexpected': true},
+          ],
+        },
+      });
+
+      expectNestedRejection({
+        'type': 'enabledWhen',
+        'field': 'a',
+        'when': {
+          'op': 'or',
+          'exprs': [
+            {'op': 'truthy', 'field': 'b', 'unexpected': true},
+          ],
+        },
+      });
+
+      expectNestedRejection({
+        'type': 'enabledWhen',
+        'field': 'a',
+        'when': {
+          'op': 'not',
+          'expr': {'op': 'truthy', 'field': 'b', 'unexpected': true},
+        },
+      });
+
+      expectNestedRejection({
+        'type': 'requires',
+        'field': 'a',
+        'dependencies': [
+          {'op': 'truthy', 'field': 'b', 'unexpected': true},
+        ],
+      });
+    });
+
+    test('rejects the disables field alias and oneOf activeBranch', () {
+      expect(
+        () => UmpireSchema.fromJson({
+          'version': 1,
+          'fields': {'a': <String, dynamic>{}, 'b': <String, dynamic>{}},
+          'rules': [
+            {'type': 'disables', 'field': 'a', 'targets': ['b']},
+          ],
+        }),
+        throwsA(isA<UmpireSchemaException>()
+            .having((e) => e.message, 'message', contains('field'))),
+      );
+
+      expect(
+        () => UmpireSchema.fromJson({
+          'version': 1,
+          'fields': {'a': <String, dynamic>{}, 'b': <String, dynamic>{}},
+          'rules': [
+            {
+              'type': 'oneOf',
+              'group': 'g',
+              'branches': {
+                'x': ['a'],
+              },
+              'activeBranch': 'x',
+            },
+          ],
+        }),
+        throwsA(isA<UmpireSchemaException>()
+            .having((e) => e.message, 'message', contains('activeBranch'))),
+      );
+    });
+
+    test('accepts a contains expression on an array field', () {
+      final json = {
+        'version': 1,
+        'fields': {
+          'tags': {'isEmpty': 'array'},
+          'note': <String, dynamic>{},
+        },
+        'rules': [
+          {
+            'type': 'enabledWhen',
+            'field': 'note',
+            'when': {'op': 'contains', 'field': 'tags', 'value': 'urgent'},
+          }
+        ],
+      };
+      final ump = UmpireSchema.fromJson(json).build();
+
+      expect(ump.check({'tags': ['urgent']})['note']!.enabled, isTrue);
+      expect(ump.check({'tags': ['routine']})['note']!.enabled, isFalse);
+    });
+
     test('parses validators map', () {
       final json = {
         'version': 1,
