@@ -1,6 +1,6 @@
 name: umpire
 description: Declarative form validation with conditional field availability.
-version: 0.1.0
+version: 0.2.0
 repository: https://github.com/umpire-tools/umpire-dart
 
 environment:
