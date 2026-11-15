@@ -117,7 +117,7 @@ String? _validateFieldDef(String name, dynamic definition) {
       'field definition for "$name" required must be a boolean when provided',
     );
   }
-  if (record.containsKey('default') && !_isJsonPrimitive(record['default'])) {
+  if (record.containsKey('default') && !isJsonPrimitive(record['default'])) {
     throw UmpireSchemaException(
       'field definition for "$name" has a non-serializable "default" value',
     );
@@ -421,7 +421,7 @@ void _validateExpression(
     case 'neq':
       _assertKnownMembers(record, const ['op', 'field', 'value'], 'Expression');
       _assertExprField(record['field'], fieldNames, op);
-      if (!_isJsonPrimitive(record['value'])) {
+      if (!isJsonPrimitive(record['value'])) {
         throw UmpireSchemaException(
           'Expression "$op" value must be a JSON primitive',
         );
@@ -463,7 +463,7 @@ void _validateExpression(
         'Expression',
       );
       _assertCondition(record, 'condEq');
-      if (!_isJsonPrimitive(record['value'])) {
+      if (!isJsonPrimitive(record['value'])) {
         throw UmpireSchemaException(
           'Expression "condEq" value must be a JSON primitive',
         );
@@ -527,7 +527,7 @@ void _validateExpression(
           'Expression "contains" requires a "value" member',
         );
       }
-      if (!_isJsonPrimitive(record['value'])) {
+      if (!isJsonPrimitive(record['value'])) {
         throw UmpireSchemaException(
           'Expression "contains" value must be a JSON primitive',
         );
@@ -613,7 +613,7 @@ void _assertArrayField(
 }
 
 void _assertPrimitiveList(dynamic values, String context) {
-  if (values is! List || !values.every(_isJsonPrimitive)) {
+  if (values is! List || !values.every(isJsonPrimitive)) {
     throw UmpireSchemaException(
       '$context must be an array of JSON primitives',
     );
@@ -640,9 +640,6 @@ void _assertString(dynamic value, String context) {
     throw UmpireSchemaException('$context must be a string');
   }
 }
-
-bool _isJsonPrimitive(dynamic value) =>
-    value == null || value is String || value is num || value is bool;
 
 Map<String, dynamic> _asRecord(dynamic value, String context) {
   if (value is! Map<String, dynamic>) {

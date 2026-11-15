@@ -33,8 +33,14 @@ bool Function(dynamic) _compileCheck(Map<String, dynamic> check) {
   }
 }
 
-bool _isJsonPrimitive(dynamic v) =>
-    v == null || v is String || v is num || v is bool;
+/// Whether [value] is a JSON primitive: null, string, bool, or a number.
+///
+/// JSON cannot express NaN or the infinities, so they are not primitives.
+bool isJsonPrimitive(dynamic value) =>
+    value == null ||
+    value is String ||
+    value is bool ||
+    (value is num && (value is! double || value.isFinite));
 
 String _validateField(Map<String, dynamic> expr, Set<String> fieldNames) {
   final field = expr['field'] as String?;
@@ -230,7 +236,7 @@ Predicate compileExpr(
         throw ArgumentError('contains expression missing "value" field');
       }
       final value = expr['value'];
-      if (!_isJsonPrimitive(value)) {
+      if (!isJsonPrimitive(value)) {
         throw ArgumentError(
             'contains expression "value" must be a JSON primitive');
       }

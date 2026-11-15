@@ -339,6 +339,58 @@ void main() {
       expect(ump.check({'tags': ['routine']})['note']!.enabled, isFalse);
     });
 
+    test('rejects a contains expression whose value is not a primitive', () {
+      Map<String, dynamic> schema(Map<String, dynamic> when) => {
+            'version': 1,
+            'fields': {
+              'tags': {'isEmpty': 'array'},
+              'note': <String, dynamic>{},
+            },
+            'rules': [
+              {'type': 'enabledWhen', 'field': 'note', 'when': when}
+            ],
+          };
+
+      expect(
+        () => UmpireSchema.fromJson(
+          schema({'op': 'contains', 'field': 'tags', 'value': ['pro']}),
+        ),
+        throwsA(isA<UmpireSchemaException>()),
+      );
+      expect(
+        () => UmpireSchema.fromJson(
+          schema({'op': 'contains', 'field': 'tags'}),
+        ),
+        throwsA(isA<UmpireSchemaException>()),
+      );
+    });
+
+    test('rejects a non-finite number as a contains value', () {
+      Map<String, dynamic> schema(double value) => {
+            'version': 1,
+            'fields': {
+              'scores': {'isEmpty': 'array'},
+              'note': <String, dynamic>{},
+            },
+            'rules': [
+              {
+                'type': 'enabledWhen',
+                'field': 'note',
+                'when': {'op': 'contains', 'field': 'scores', 'value': value},
+              }
+            ],
+          };
+
+      expect(
+        () => UmpireSchema.fromJson(schema(double.nan)),
+        throwsA(isA<UmpireSchemaException>()),
+      );
+      expect(
+        () => UmpireSchema.fromJson(schema(double.infinity)),
+        throwsA(isA<UmpireSchemaException>()),
+      );
+    });
+
     test('accepts a whole-number double for minLength and maxLength', () {
       final json = {
         'version': 1,

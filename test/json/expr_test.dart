@@ -294,27 +294,6 @@ void main() {
       );
     });
 
-    test('throws when contains is missing a primitive value', () {
-      expect(
-        () => compileExpr(
-          {'op': 'contains', 'field': 'planId'},
-          fieldNames: fieldNames,
-        ),
-        throwsArgumentError,
-      );
-      expect(
-        () => compileExpr(
-          {
-            'op': 'contains',
-            'field': 'planId',
-            'value': ['pro'],
-          },
-          fieldNames: fieldNames,
-        ),
-        throwsArgumentError,
-      );
-    });
-
     test('throws on excessive nesting depth', () {
       Map<String, dynamic> deep = {'op': 'truthy', 'field': 'email'};
       for (int i = 0; i < 60; i++) {
