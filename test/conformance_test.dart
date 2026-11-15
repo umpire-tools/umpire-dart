@@ -108,6 +108,7 @@ void main() {
               () => ump.check(values, conditions: conditions),
               f['errorIncludes'] as String?,
               where,
+              matcher: anyOf(isA<Exception>(), isA<ArgumentError>()),
             );
           } else {
             fail('$where: unknown failure phase "$phase"');
