@@ -179,15 +179,47 @@ void main() {
       expect(pred({'email': null}, {}), isFalse);
     });
 
-    test('minLength check returns true when length >= min', () {
+    test('minLength check returns true when length >= value', () {
       final pred = compileExpr({
         'op': 'check',
         'field': 'planId',
-        'check': {'op': 'minLength', 'min': 3},
+        'check': {'op': 'minLength', 'value': 3},
       }, fieldNames: fieldNames);
 
       expect(pred({'planId': 'pro'}, {}), isTrue);
       expect(pred({'planId': 'ab'}, {}), isFalse);
+    });
+
+    test('min, max, and length checks ignore the min/max parameter aliases',
+        () {
+      for (final check in [
+        {'op': 'minLength', 'min': 3},
+        {'op': 'maxLength', 'max': 3},
+        {'op': 'min', 'min': 3},
+        {'op': 'max', 'max': 3},
+      ]) {
+        expect(
+          () => compileExpr({
+            'op': 'check',
+            'field': 'planId',
+            'check': check,
+          }, fieldNames: fieldNames),
+          throwsArgumentError,
+          reason: 'check $check must require "value"',
+        );
+      }
+    });
+
+    test('range check reads its own min and max parameters', () {
+      final pred = compileExpr({
+        'op': 'check',
+        'field': 'planId',
+        'check': {'op': 'range', 'min': 2, 'max': 4},
+      }, fieldNames: {'planId'});
+
+      expect(pred({'planId': 1}, {}), isFalse);
+      expect(pred({'planId': 3}, {}), isTrue);
+      expect(pred({'planId': 9}, {}), isFalse);
     });
 
     test('matches check with regex pattern', () {

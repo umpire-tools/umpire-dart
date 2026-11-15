@@ -41,36 +41,36 @@ bool Function(dynamic) _compileCheck(Map<String, dynamic> check) {
             'Invalid regex pattern in "matches" check: $pattern — ${e.message}');
       }
     case 'minLength':
-      final min = (check['min'] ?? check['value']) as num?;
+      final min = check['value'] as num?;
       if (min == null) {
-        throw ArgumentError('Check "minLength" requires a "min" parameter');
+        throw ArgumentError('Check "minLength" requires a "value" parameter');
       }
       return (v) {
         if (v is! String) return false;
         return v.length >= min;
       };
     case 'maxLength':
-      final max = (check['max'] ?? check['value']) as num?;
+      final max = check['value'] as num?;
       if (max == null) {
-        throw ArgumentError('Check "maxLength" requires a "max" parameter');
+        throw ArgumentError('Check "maxLength" requires a "value" parameter');
       }
       return (v) {
         if (v is! String) return false;
         return v.length <= max;
       };
     case 'min':
-      final minValue = (check['min'] ?? check['value']) as num?;
+      final minValue = check['value'] as num?;
       if (minValue == null) {
-        throw ArgumentError('Check "min" requires a "min" parameter');
+        throw ArgumentError('Check "min" requires a "value" parameter');
       }
       return (v) {
         if (v is! num) return false;
         return v >= minValue;
       };
     case 'max':
-      final maxValue = (check['max'] ?? check['value']) as num?;
+      final maxValue = check['value'] as num?;
       if (maxValue == null) {
-        throw ArgumentError('Check "max" requires a "max" parameter');
+        throw ArgumentError('Check "max" requires a "value" parameter');
       }
       return (v) {
         if (v is! num) return false;
