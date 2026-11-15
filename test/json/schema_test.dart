@@ -425,6 +425,61 @@ void main() {
       expect(fair('rank', 6), isFalse, reason: 'max above 5');
     });
 
+    test('a List value gets the same length verdict from a check rule and a '
+        'check expression', () {
+      final ump = UmpireSchema.fromJson({
+        'version': 1,
+        'fields': {
+          'roster': {'isEmpty': 'array'},
+          'lineup': {'isEmpty': 'array'},
+        },
+        'rules': [
+          {'type': 'check', 'field': 'roster', 'op': 'minLength', 'value': 2},
+          {
+            'type': 'fairWhen',
+            'field': 'lineup',
+            'when': {
+              'op': 'check',
+              'field': 'lineup',
+              'check': {'op': 'minLength', 'value': 2},
+            },
+          },
+        ],
+      }).build();
+
+      for (final value in [
+        <String>[],
+        ['a'],
+        ['a', 'b'],
+      ]) {
+        final status = ump.check({'roster': value, 'lineup': value});
+        expect(
+          status['lineup']!.fair,
+          status['roster']!.fair,
+          reason: 'minLength on $value must agree across a check rule and a '
+              'check expression',
+        );
+      }
+
+      final short = ump.check({
+        'roster': ['a'],
+        'lineup': ['a'],
+      });
+      expect(short['roster']!.fair, isFalse,
+          reason: 'one entry is under minLength 2 as a check rule');
+      expect(short['lineup']!.fair, isFalse,
+          reason: 'one entry is under minLength 2 as a check expression');
+
+      final exact = ump.check({
+        'roster': ['a', 'b'],
+        'lineup': ['a', 'b'],
+      });
+      expect(exact['roster']!.fair, isTrue,
+          reason: 'two entries meet minLength 2 as a check rule');
+      expect(exact['lineup']!.fair, isTrue,
+          reason: 'two entries meet minLength 2 as a check expression');
+    });
+
     test('holds one validator op and parameter contract', () {
       void expectSpecRejection(
         String label,

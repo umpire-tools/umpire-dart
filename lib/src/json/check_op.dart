@@ -1,10 +1,37 @@
 import '../check_ops.dart';
 import 'errors.dart';
 
+/// The closed validator op set with the parameters each op reads.
+///
+/// The schema walk takes its allowed members from here and [parseCheckOp] takes
+/// its parameter names from here, so an op cannot declare parameters in one
+/// place and ignore them in the other.
+const _checkOpParams = <String, List<String>>{
+  'email': [],
+  'url': [],
+  'matches': ['pattern'],
+  'minLength': ['value'],
+  'maxLength': ['value'],
+  'min': ['value'],
+  'max': ['value'],
+  'range': ['min', 'max'],
+  'integer': [],
+};
+
+/// The members a validator spec for [op] may declare, `op` included.
+///
+/// Returns `const ['op']` for a missing or unknown op, leaving the rejection to
+/// the caller's own op check.
+List<String> checkOpMembers(String? op) => [
+      'op',
+      ...?_checkOpParams[op],
+    ];
+
 /// Parses a validator spec into a [CheckOp].
 ///
 /// This is the single authority for the closed validator op set and each op's
 /// parameter rules, shared by the schema walk, the JSON parser, and `build()`.
+/// [checkOpMembers] carries the same op set for the schema walk's member check.
 ///
 /// Throws [UmpireSchemaException] for an unknown op or a missing or mistyped
 /// parameter. `matches` builds its [RegExp] here, so an invalid pattern
@@ -12,6 +39,9 @@ import 'errors.dart';
 CheckOp parseCheckOp(String? op, Map<String, dynamic> params) {
   if (op == null) {
     throw UmpireSchemaException('Check rule missing "op" field');
+  }
+  if (!_checkOpParams.containsKey(op)) {
+    throw UmpireSchemaException('Unknown check op: "$op"');
   }
 
   switch (op) {
@@ -70,7 +100,8 @@ CheckOp parseCheckOp(String? op, Map<String, dynamic> params) {
       return checkOps.range(min, max);
     case 'integer':
       return checkOps.integer();
-    default:
-      throw UmpireSchemaException('Unknown check op: "$op"');
   }
+
+  // Reachable only if _checkOpParams gains an op without a parser above.
+  throw StateError('Check op "$op" is declared without a parser');
 }

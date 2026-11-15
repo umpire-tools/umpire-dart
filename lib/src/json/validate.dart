@@ -29,15 +29,6 @@ const _isEmptyStrategies = <String>{
   'present',
 };
 
-const _validatorSpecMemberSets = <String, List<String>>{
-  'matches': ['op', 'pattern'],
-  'minLength': ['op', 'value'],
-  'maxLength': ['op', 'value'],
-  'min': ['op', 'value'],
-  'max': ['op', 'value'],
-  'range': ['op', 'min', 'max'],
-};
-
 /// Validates [schema] against the closed Umpire v1 document contract.
 ///
 /// Throws [UmpireSchemaException] for any undeclared member, unknown variant,
@@ -232,7 +223,7 @@ List<String> _ruleMembers(Map<String, dynamic> rule) {
         'type',
         'field',
         'reason',
-        ..._validatorSpecMembers(rule['op']),
+        ...checkOpMembers(rule['op']),
       ];
     default:
       throw UmpireSchemaException('Unknown rule type "${rule['type']}"');
@@ -322,8 +313,9 @@ void _validateOneOfBranches(
   }
 }
 
+/// Members of a validator spec whose `op` is still an untyped JSON value.
 List<String> _validatorSpecMembers(dynamic op) {
-  return _validatorSpecMemberSets[op] ?? const ['op'];
+  return checkOpMembers(op is String ? op : null);
 }
 
 void _validateValidatorDef(
