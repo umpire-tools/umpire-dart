@@ -113,6 +113,26 @@ void main() {
       expect(pred({'accountType': 'business'}, {}), isFalse);
     });
 
+    test('contains, in, and notIn compare numbers by value', () {
+      final contains = compileExpr(
+        {'op': 'contains', 'field': 'planId', 'value': 22},
+        fieldNames: fieldNames,
+      );
+      expect(contains({'planId': [22.0]}, {}), isTrue);
+
+      final isIn = compileExpr(
+        {'op': 'in', 'field': 'planId', 'values': [22]},
+        fieldNames: fieldNames,
+      );
+      expect(isIn({'planId': 22.0}, {}), isTrue);
+
+      final notIn = compileExpr(
+        {'op': 'notIn', 'field': 'planId', 'values': [22]},
+        fieldNames: fieldNames,
+      );
+      expect(notIn({'planId': 22.0}, {}), isFalse);
+    });
+
     test('truthy: returns true for truthy values', () {
       final pred = compileExpr(
         {'op': 'truthy', 'field': 'status'},
