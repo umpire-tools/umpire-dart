@@ -245,6 +245,77 @@ void main() {
       );
     });
 
+    test('rejects unknown rule types, validators, and field options', () {
+      void expectRejection(Map<String, dynamic> overrides) {
+        expect(
+          () => UmpireSchema.fromJson({
+            'version': 1,
+            'fields': {'a': <String, dynamic>{}, 'b': <String, dynamic>{}},
+            'rules': <dynamic>[],
+            ...overrides,
+          }),
+          throwsA(isA<UmpireSchemaException>()),
+        );
+      }
+
+      expectRejection({
+        'rules': [
+          {'type': 'bogus', 'field': 'a'},
+        ],
+      });
+
+      expectRejection({
+        'rules': [
+          {'type': 42, 'field': 'a'},
+        ],
+      });
+
+      expectRejection({
+        'validators': {
+          'nonexistent': {'op': 'email'},
+        },
+      });
+
+      expectRejection({
+        'validators': {
+          'a': {'op': 'bogus'},
+        },
+      });
+
+      expectRejection({
+        'rules': [
+          {
+            'type': 'eitherOf',
+            'group': 'g',
+            'branches': {
+              'x': [
+                {'type': 'requires', 'field': 'a', 'dependency': 'b'},
+              ],
+            },
+            'reason': 'not part of eitherOf',
+          },
+        ],
+      });
+
+      expectRejection({
+        'rules': [
+          {
+            'type': 'anyOf',
+            'rules': [
+              {'type': 'requires', 'field': 'a', 'dependency': 'b'},
+            ],
+            'reason': 'not part of anyOf',
+          },
+        ],
+      });
+
+      expectRejection({
+        'fields': {
+          'a': {'isEmpty': 'bogus'},
+        },
+      });
+    });
+
     test('accepts a contains expression on an array field', () {
       final json = {
         'version': 1,
@@ -511,6 +582,35 @@ void main() {
       final withPref = ump.check({'preferContact': true});
       expect(withPref['email']!.enabled, isFalse);
       expect(withPref['phone']!.enabled, isFalse);
+    });
+
+    test('builds disables rule from an expression instead of a source', () {
+      final json = {
+        'version': 1,
+        'fields': {
+          'mode': {'required': false},
+          'email': {'required': false},
+          'phone': {'required': false},
+        },
+        'rules': [
+          {
+            'type': 'disables',
+            'targets': ['email', 'phone'],
+            'when': {'op': 'eq', 'field': 'mode', 'value': 'silent'},
+            'reason': 'Silent mode',
+          }
+        ],
+      };
+      final ump = UmpireSchema.fromJson(json).build();
+
+      final silent = ump.check({'mode': 'silent'});
+      expect(silent['email']!.enabled, isFalse);
+      expect(silent['phone']!.enabled, isFalse);
+      expect(silent['email']!.reason, 'Silent mode');
+
+      final noisy = ump.check({'mode': 'noisy'});
+      expect(noisy['email']!.enabled, isTrue);
+      expect(noisy['phone']!.enabled, isTrue);
     });
 
     test('builds oneOf rule from JSON', () {
