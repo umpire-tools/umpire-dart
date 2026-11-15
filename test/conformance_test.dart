@@ -54,8 +54,10 @@ void main() {
           final c = cases[ci] as Map<String, dynamic>;
           final values = c['values'] as Map<String, dynamic>? ?? {};
           final conditions = c['conditions'] as Map<String, dynamic>? ?? {};
+          final prev = c['prev'] as Map<String, dynamic>?;
 
-          final availability = ump.check(values, conditions: conditions);
+          final availability =
+              ump.check(values, conditions: conditions, prev: prev);
 
           final actualMap = <String, Map<String, dynamic>>{};
           for (final entry in availability.entries) {
@@ -81,13 +83,14 @@ void main() {
           final f = failures[i] as Map<String, dynamic>;
           final phase = f['phase'] as String;
 
+          final where = 'Failure fixture[$fi] case[$i] {${f['id']}}';
+
           if (phase == 'validate') {
-            expect(
+            _expectThrowsWithMessage(
               () => UmpireSchema.fromJson(
                   f['schema'] as Map<String, dynamic>),
-              throwsA(anyOf(isA<UmpireSchemaException>(), isA<ArgumentError>())),
-              reason:
-                  'Failure fixture[$fi] case[$i]: expected UmpireSchema.fromJson to throw',
+              f['errorIncludes'] as String?,
+              where,
             );
           } else if (phase == 'evaluate') {
             final schema = UmpireSchema.fromJson(
@@ -97,11 +100,10 @@ void main() {
             final conditions =
                 f['conditions'] as Map<String, dynamic>? ?? {};
 
-            expect(
+            _expectThrowsWithMessage(
               () => ump.check(values, conditions: conditions),
-              throwsA(anyOf(isA<Exception>(), isA<ArgumentError>())),
-              reason:
-                  'Failure fixture[$fi] case[$i]: expected ump.check() to throw',
+              f['errorIncludes'] as String?,
+              where,
             );
           }
         }
@@ -147,6 +149,34 @@ void _compareAvailability(
         );
       }
     }
+
+    expect(
+      actualField.keys.toSet().difference(expectedField.keys.toSet()),
+      isEmpty,
+      reason: '$context, field "$field": unexpected status members',
+    );
+  }
+}
+
+/// Asserts that [body] throws, and that the error message contains
+/// [errorIncludes] when the fixture pins one.
+void _expectThrowsWithMessage(
+  void Function() body,
+  String? errorIncludes,
+  String context,
+) {
+  Object? thrown;
+  try {
+    body();
+  } catch (error) {
+    thrown = error;
+  }
+
+  expect(thrown, isNotNull, reason: '$context: expected a thrown error');
+
+  if (errorIncludes != null) {
+    expect(thrown.toString(), contains(errorIncludes),
+        reason: '$context: error message must include "$errorIncludes"');
   }
 }
 

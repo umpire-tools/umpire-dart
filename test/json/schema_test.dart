@@ -88,6 +88,50 @@ void main() {
       expect(schema.fields['e']!.isEmpty, IsEmptyStrategy.present);
     });
 
+    test('reads field defaults so init() seeds them', () {
+      final json = {
+        'version': 1,
+        'fields': {
+          'note': {'default': 'not inserted during check'},
+          'empty': <String, dynamic>{},
+        },
+        'rules': [],
+      };
+      final schema = UmpireSchema.fromJson(json);
+      expect(schema.build().init(),
+          {'note': 'not inserted during check', 'empty': null});
+    });
+
+    test('rejects undeclared members on closed objects', () {
+      Map<String, dynamic> schema(Map<String, dynamic> overrides) => {
+            'version': 1,
+            'fields': {
+              'email': <String, dynamic>{},
+            },
+            'rules': <dynamic>[],
+            ...overrides,
+          };
+
+      expect(
+        () => UmpireSchema.fromJson(schema({'unexpected': true})),
+        throwsA(isA<UmpireSchemaException>()
+            .having((e) => e.message, 'message', contains('unexpected'))),
+      );
+      expect(
+        () => UmpireSchema.fromJson(schema({
+              'fields': {
+                'email': {'description': 'not part of v1'},
+              },
+            })),
+        throwsA(isA<UmpireSchemaException>()
+            .having((e) => e.message, 'message', contains('description'))),
+      );
+      expect(
+        () => UmpireSchema.fromJson(schema({'fields': <String, dynamic>{}})),
+        throwsA(isA<UmpireSchemaException>()),
+      );
+    });
+
     test('parses validators map', () {
       final json = {
         'version': 1,
@@ -305,7 +349,7 @@ void main() {
         'rules': [
           {
             'type': 'disables',
-            'field': 'preferContact',
+            'source': 'preferContact',
             'targets': ['email', 'phone'],
           }
         ],
@@ -330,7 +374,6 @@ void main() {
             'type': 'oneOf',
             'group': 'contact',
             'branches': {'channel1': ['email'], 'channel2': ['sms']},
-            'activeBranch': 'channel1',
           }
         ],
       };
