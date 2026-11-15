@@ -133,7 +133,7 @@ void main() {
     });
 
     test('rejects undeclared members in nested rules and expressions', () {
-      void expectNestedRejection(Map<String, dynamic> rule) {
+      void expectNestedRejection(String label, Map<String, dynamic> rule) {
         expect(
           () => UmpireSchema.fromJson({
             'version': 1,
@@ -142,10 +142,11 @@ void main() {
           }),
           throwsA(isA<UmpireSchemaException>()
               .having((e) => e.message, 'message', contains('unexpected'))),
+          reason: label,
         );
       }
 
-      expectNestedRejection({
+      expectNestedRejection('anyOf inner rule member', {
         'type': 'anyOf',
         'rules': [
           {
@@ -157,7 +158,7 @@ void main() {
         ],
       });
 
-      expectNestedRejection({
+      expectNestedRejection('eitherOf branch rule member', {
         'type': 'eitherOf',
         'group': 'g',
         'branches': {
@@ -172,7 +173,7 @@ void main() {
         },
       });
 
-      expectNestedRejection({
+      expectNestedRejection('and operand member', {
         'type': 'enabledWhen',
         'field': 'a',
         'when': {
@@ -183,7 +184,7 @@ void main() {
         },
       });
 
-      expectNestedRejection({
+      expectNestedRejection('or operand member', {
         'type': 'enabledWhen',
         'field': 'a',
         'when': {
@@ -194,7 +195,7 @@ void main() {
         },
       });
 
-      expectNestedRejection({
+      expectNestedRejection('not operand member', {
         'type': 'enabledWhen',
         'field': 'a',
         'when': {
@@ -203,7 +204,7 @@ void main() {
         },
       });
 
-      expectNestedRejection({
+      expectNestedRejection('requires dependency expression member', {
         'type': 'requires',
         'field': 'a',
         'dependencies': [
@@ -246,7 +247,7 @@ void main() {
     });
 
     test('rejects unknown rule types, validators, and field options', () {
-      void expectRejection(Map<String, dynamic> overrides) {
+      void expectRejection(String label, Map<String, dynamic> overrides) {
         expect(
           () => UmpireSchema.fromJson({
             'version': 1,
@@ -255,34 +256,35 @@ void main() {
             ...overrides,
           }),
           throwsA(isA<UmpireSchemaException>()),
+          reason: label,
         );
       }
 
-      expectRejection({
+      expectRejection('unknown rule type', {
         'rules': [
           {'type': 'bogus', 'field': 'a'},
         ],
       });
 
-      expectRejection({
+      expectRejection('non-string rule type', {
         'rules': [
           {'type': 42, 'field': 'a'},
         ],
       });
 
-      expectRejection({
+      expectRejection('validator on an undeclared field', {
         'validators': {
           'nonexistent': {'op': 'email'},
         },
       });
 
-      expectRejection({
+      expectRejection('unknown validator op', {
         'validators': {
           'a': {'op': 'bogus'},
         },
       });
 
-      expectRejection({
+      expectRejection('eitherOf reason member', {
         'rules': [
           {
             'type': 'eitherOf',
@@ -297,7 +299,7 @@ void main() {
         ],
       });
 
-      expectRejection({
+      expectRejection('anyOf reason member', {
         'rules': [
           {
             'type': 'anyOf',
@@ -309,7 +311,7 @@ void main() {
         ],
       });
 
-      expectRejection({
+      expectRejection('unknown isEmpty strategy', {
         'fields': {
           'a': {'isEmpty': 'bogus'},
         },
@@ -352,6 +354,75 @@ void main() {
 
       expect(avail['code']!.valid, isFalse);
       expect(avail['code']!.error, 'Too short');
+    });
+
+    test('evaluates maxLength, min, and max validators around the boundary',
+        () {
+      final json = {
+        'version': 1,
+        'fields': {
+          'tag': {'isEmpty': 'string'},
+          'score': {'isEmpty': 'number'},
+          'rank': {'isEmpty': 'number'},
+        },
+        'rules': <dynamic>[],
+        'validators': {
+          'tag': {'op': 'maxLength', 'value': 3, 'error': 'Too long'},
+          'score': {'op': 'min', 'value': 10, 'error': 'Too low'},
+          'rank': {'op': 'max', 'value': 5, 'error': 'Too high'},
+        },
+      };
+      final ump = UmpireSchema.fromJson(json).build();
+
+      bool valid(String field, Object? value) =>
+          ump.check({field: value})[field]!.valid!;
+
+      expect(valid('tag', 'ab'), isTrue, reason: 'maxLength below 3');
+      expect(valid('tag', 'abc'), isTrue, reason: 'maxLength at 3');
+      expect(valid('tag', 'abcd'), isFalse, reason: 'maxLength above 3');
+
+      expect(valid('score', 9), isFalse, reason: 'min below 10');
+      expect(valid('score', 10), isTrue, reason: 'min at 10');
+      expect(valid('score', 11), isTrue, reason: 'min above 10');
+
+      expect(valid('rank', 4), isTrue, reason: 'max below 5');
+      expect(valid('rank', 5), isTrue, reason: 'max at 5');
+      expect(valid('rank', 6), isFalse, reason: 'max above 5');
+
+      expect(ump.check({'tag': 'abcd'})['tag']!.error, 'Too long');
+    });
+
+    test('evaluates maxLength, min, and max check rules around the boundary',
+        () {
+      final json = {
+        'version': 1,
+        'fields': {
+          'tag': {'isEmpty': 'string'},
+          'score': {'isEmpty': 'number'},
+          'rank': {'isEmpty': 'number'},
+        },
+        'rules': [
+          {'type': 'check', 'field': 'tag', 'op': 'maxLength', 'value': 3},
+          {'type': 'check', 'field': 'score', 'op': 'min', 'value': 10},
+          {'type': 'check', 'field': 'rank', 'op': 'max', 'value': 5},
+        ],
+      };
+      final ump = UmpireSchema.fromJson(json).build();
+
+      bool fair(String field, Object? value) =>
+          ump.check({field: value})[field]!.fair;
+
+      expect(fair('tag', 'ab'), isTrue, reason: 'maxLength below 3');
+      expect(fair('tag', 'abc'), isTrue, reason: 'maxLength at 3');
+      expect(fair('tag', 'abcd'), isFalse, reason: 'maxLength above 3');
+
+      expect(fair('score', 9), isFalse, reason: 'min below 10');
+      expect(fair('score', 10), isTrue, reason: 'min at 10');
+      expect(fair('score', 11), isTrue, reason: 'min above 10');
+
+      expect(fair('rank', 4), isTrue, reason: 'max below 5');
+      expect(fair('rank', 5), isTrue, reason: 'max at 5');
+      expect(fair('rank', 6), isFalse, reason: 'max above 5');
     });
 
     test('holds one validator op and parameter contract', () {
@@ -417,6 +488,51 @@ void main() {
           contains('disables rule requires "source" or "when"'),
         )),
       );
+    });
+
+    test('rejects undeclared field references in rules, disables, and oneOf',
+        () {
+      void expectUnknownField(String label, Map<String, dynamic> rule) {
+        expect(
+          () => UmpireSchema.fromJson({
+            'version': 1,
+            'fields': {'a': <String, dynamic>{}, 'b': <String, dynamic>{}},
+            'rules': [rule],
+          }),
+          throwsA(isA<UmpireSchemaException>().having(
+            (e) => e.message,
+            'message',
+            contains('unknown field "missing"'),
+          )),
+          reason: label,
+        );
+      }
+
+      expectUnknownField('rule field', {
+        'type': 'enabledWhen',
+        'field': 'missing',
+        'when': {'op': 'truthy', 'field': 'a'},
+      });
+
+      expectUnknownField('disables source', {
+        'type': 'disables',
+        'source': 'missing',
+        'targets': ['b'],
+      });
+
+      expectUnknownField('disables target', {
+        'type': 'disables',
+        'source': 'a',
+        'targets': ['missing'],
+      });
+
+      expectUnknownField('oneOf branch field', {
+        'type': 'oneOf',
+        'group': 'g',
+        'branches': {
+          'x': ['missing'],
+        },
+      });
     });
 
     test('parses validators map', () {
