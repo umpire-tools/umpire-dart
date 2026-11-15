@@ -22,6 +22,19 @@ Umpire _conditionalUmp() => umpire(
       ],
     );
 
+Umpire _oneOfUmp() => umpire(
+      fields: {
+        'phone': FieldDef(isEmpty: IsEmptyStrategy.string),
+        'signal': FieldDef(isEmpty: IsEmptyStrategy.string),
+      },
+      rules: [
+        oneOf('contact', {
+          'phone': ['phone'],
+          'signal': ['signal'],
+        }),
+      ],
+    );
+
 void main() {
   group('UmpireController construction', () {
     test('initializes values from ump.init() when no initialValues', () {
@@ -102,6 +115,22 @@ void main() {
       expect(controller.values['email'], 'c@d.com');
       expect(controller.availability['name']!.satisfied, isTrue);
       expect(controller.availability['email']!.satisfied, isTrue);
+    });
+  });
+
+  group('UmpireController oneOf resolution', () {
+    test('keeps the branch the user just filled active', () {
+      final controller = UmpireController(
+        ump: _oneOfUmp(),
+        initialValues: {'phone': 'call'},
+      );
+
+      controller.setValue('signal', 'wave');
+
+      // Both branches are satisfied; the newly filled one wins, so the user's
+      // input is not left sitting on a disabled field.
+      expect(controller.availability['signal']!.enabled, isTrue);
+      expect(controller.availability['phone']!.enabled, isFalse);
     });
   });
 
