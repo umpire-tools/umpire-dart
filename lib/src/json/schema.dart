@@ -10,6 +10,7 @@ import '../rules/one_of.dart';
 import '../rules/requires.dart';
 import '../rules/rule.dart';
 import '../umpire.dart';
+import 'check_op.dart';
 import 'condition_provider.dart';
 import 'errors.dart';
 import 'expr.dart';
@@ -186,7 +187,7 @@ class UmpireSchema {
     for (final entry in validators.entries) {
       final vMap = entry.value as Map<String, dynamic>?;
       if (vMap == null) continue;
-      final op = _parseCheckOp(vMap['op'] as String?, vMap);
+      final op = parseCheckOp(vMap['op'] as String?, vMap);
       compiledValidators[entry.key] = ValidatorEntry(
         op: op,
         error: vMap['error'] as String? ?? 'Invalid value',
@@ -416,7 +417,7 @@ JsonRule _parseJsonRule(Map<String, dynamic> data) {
         field: data['field'] as String?,
         op: op,
         reason: data['reason'] as String?,
-        validator: _parseCheckOp(op, data),
+        validator: parseCheckOp(op, data),
       );
 
     case 'eitherOf':
@@ -442,64 +443,5 @@ JsonRule _parseJsonRule(Map<String, dynamic> data) {
 
     default:
       throw UmpireSchemaException('Unknown rule type: "$type"');
-  }
-}
-
-CheckOp _parseCheckOp(String? op, Map<String, dynamic> params) {
-  if (op == null) {
-    throw UmpireSchemaException('Check rule missing "op" field');
-  }
-
-  switch (op) {
-    case 'email':
-      return checkOps.email();
-    case 'url':
-      return checkOps.url();
-    case 'matches':
-      final pattern = params['pattern'] as String?;
-      if (pattern == null) {
-        throw UmpireSchemaException(
-          'Check "matches" requires "pattern"',
-        );
-      }
-      return checkOps.matches(RegExp(pattern));
-    case 'minLength':
-      final min = params['value'] as num?;
-      if (min == null) {
-        throw UmpireSchemaException('Check "minLength" requires "value"');
-      }
-      return checkOps.minLength(min.toInt());
-    case 'maxLength':
-      final max = params['value'] as num?;
-      if (max == null) {
-        throw UmpireSchemaException('Check "maxLength" requires "value"');
-      }
-      return checkOps.maxLength(max.toInt());
-    case 'min':
-      final minVal = params['value'] as num?;
-      if (minVal == null) {
-        throw UmpireSchemaException('Check "min" requires "value"');
-      }
-      return checkOps.min(minVal);
-    case 'max':
-      final maxVal = params['value'] as num?;
-      if (maxVal == null) {
-        throw UmpireSchemaException('Check "max" requires "value"');
-      }
-      return checkOps.max(maxVal);
-    case 'range':
-      if (params['min'] == null || params['max'] == null) {
-        throw UmpireSchemaException(
-          'Check "range" requires "min" and "max"',
-        );
-      }
-      return checkOps.range(
-        params['min'] as num,
-        params['max'] as num,
-      );
-    case 'integer':
-      return checkOps.integer();
-    default:
-      throw UmpireSchemaException('Unknown check op: "$op"');
   }
 }

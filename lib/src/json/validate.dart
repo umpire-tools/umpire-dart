@@ -1,3 +1,4 @@
+import 'check_op.dart';
 import 'errors.dart';
 import 'expr.dart';
 
@@ -28,16 +29,13 @@ const _isEmptyStrategies = <String>{
   'present',
 };
 
-const _validatorOps = <String>{
-  'email',
-  'url',
-  'integer',
-  'matches',
-  'minLength',
-  'maxLength',
-  'min',
-  'max',
-  'range',
+const _validatorSpecMemberSets = <String, List<String>>{
+  'matches': ['op', 'pattern'],
+  'minLength': ['op', 'value'],
+  'maxLength': ['op', 'value'],
+  'min': ['op', 'value'],
+  'max': ['op', 'value'],
+  'range': ['op', 'min', 'max'],
 };
 
 /// Validates [schema] against the closed Umpire v1 document contract.
@@ -319,19 +317,7 @@ void _validateOneOfBranches(
 }
 
 List<String> _validatorSpecMembers(dynamic op) {
-  switch (op) {
-    case 'matches':
-      return const ['op', 'pattern'];
-    case 'minLength':
-    case 'maxLength':
-    case 'min':
-    case 'max':
-      return const ['op', 'value'];
-    case 'range':
-      return const ['op', 'min', 'max'];
-    default:
-      return const ['op'];
-  }
+  return _validatorSpecMemberSets[op] ?? const ['op'];
 }
 
 void _validateValidatorDef(
@@ -360,47 +346,21 @@ void _validateValidatorSpec(
   List<String> additionalMembers, {
   String context = 'Validator spec',
 }) {
+  final op = spec['op'];
   _assertKnownMembers(
     spec,
-    [..._validatorSpecMembers(spec['op']), ...additionalMembers],
+    [..._validatorSpecMembers(op), ...additionalMembers],
     context,
   );
 
-  final op = spec['op'];
-  if (op is! String || !_validatorOps.contains(op)) {
-    throw UmpireSchemaException('Unknown validator op "$op"');
+  if (op is! String) {
+    throw UmpireSchemaException('$context must include a string "op"');
   }
 
-  switch (op) {
-    case 'matches':
-      final pattern = spec['pattern'];
-      if (pattern is! String) {
-        throw UmpireSchemaException(
-          'Validator "matches" requires a string pattern',
-        );
-      }
-      try {
-        RegExp(pattern);
-      } on FormatException catch (e) {
-        throw UmpireSchemaException(
-          'Invalid regex pattern "$pattern": ${e.message}',
-        );
-      }
-    case 'minLength':
-    case 'maxLength':
-    case 'min':
-    case 'max':
-      if (spec['value'] is! num) {
-        throw UmpireSchemaException(
-          'Validator "$op" requires a numeric value',
-        );
-      }
-    case 'range':
-      if (spec['min'] is! num || spec['max'] is! num) {
-        throw UmpireSchemaException(
-          'Validator "range" requires numeric min and max values',
-        );
-      }
+  try {
+    parseCheckOp(op, spec);
+  } on FormatException catch (e) {
+    throw UmpireSchemaException('Invalid regex pattern: ${e.message}');
   }
 }
 

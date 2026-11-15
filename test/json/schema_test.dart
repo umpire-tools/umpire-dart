@@ -354,6 +354,52 @@ void main() {
       expect(avail['code']!.error, 'Too short');
     });
 
+    test('holds one validator op and parameter contract', () {
+      void expectSpecRejection(
+        String label,
+        Map<String, dynamic> spec,
+        String message,
+      ) {
+        expect(
+          () => UmpireSchema.fromJson({
+            'version': 1,
+            'fields': {'a': <String, dynamic>{}},
+            'rules': <dynamic>[],
+            'validators': {'a': spec},
+          }),
+          throwsA(isA<UmpireSchemaException>()
+              .having((e) => e.message, 'message', contains(message))),
+          reason: label,
+        );
+      }
+
+      expectSpecRejection(
+        'maxLength rejects the "max" alias',
+        {'op': 'maxLength', 'max': 3},
+        'unknown member "max"',
+      );
+      expectSpecRejection(
+        'maxLength requires a numeric value',
+        {'op': 'maxLength', 'value': '3'},
+        'requires a numeric "value"',
+      );
+      expectSpecRejection(
+        'range requires numeric min and max',
+        {'op': 'range', 'min': 2},
+        'requires numeric "min" and "max"',
+      );
+      expectSpecRejection(
+        'matches rejects an invalid pattern',
+        {'op': 'matches', 'pattern': '['},
+        'Invalid regex pattern',
+      );
+      expectSpecRejection(
+        'rejects an unknown op',
+        {'op': 'bogus'},
+        'Unknown check op',
+      );
+    });
+
     test('parses validators map', () {
       final json = {
         'version': 1,
