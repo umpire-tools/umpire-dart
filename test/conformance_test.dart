@@ -49,7 +49,10 @@ void main() {
             UmpireSchema.fromJson(fixtureData['schema'] as Map<String, dynamic>);
         final ump = schema.build();
 
-        final cases = fixtureData['cases'] as List<dynamic>;
+        final cases = fixtureData['cases'] as List<dynamic>? ?? const [];
+        if (cases.isEmpty) {
+          fail('fixture[$fi] has no cases');
+        }
         for (var ci = 0; ci < cases.length; ci++) {
           final c = cases[ci] as Map<String, dynamic>;
           final values = c['values'] as Map<String, dynamic>? ?? {};
@@ -91,6 +94,7 @@ void main() {
                   f['schema'] as Map<String, dynamic>),
               f['errorIncludes'] as String?,
               where,
+              matcher: isA<UmpireSchemaException>(),
             );
           } else if (phase == 'evaluate') {
             final schema = UmpireSchema.fromJson(
@@ -105,6 +109,8 @@ void main() {
               f['errorIncludes'] as String?,
               where,
             );
+          } else {
+            fail('$where: unknown failure phase "$phase"');
           }
         }
       }
@@ -117,6 +123,13 @@ void _compareAvailability(
   Map<String, dynamic> actual,
   String context,
 ) {
+  final extraFields = actual.keys.toSet().difference(expected.keys.toSet());
+  expect(
+    extraFields,
+    isEmpty,
+    reason: '$context: fields missing from expectedAvailability $extraFields',
+  );
+
   for (final fieldEntry in expected.entries) {
     final field = fieldEntry.key;
     final expectedField = fieldEntry.value as Map<String, dynamic>;
@@ -158,13 +171,15 @@ void _compareAvailability(
   }
 }
 
-/// Asserts that [body] throws, and that the error message contains
-/// [errorIncludes] when the fixture pins one.
+/// Asserts that [body] throws, that the thrown object matches [matcher] when
+/// one is given, and that the error message contains [errorIncludes] when the
+/// fixture pins one.
 void _expectThrowsWithMessage(
   void Function() body,
   String? errorIncludes,
-  String context,
-) {
+  String context, {
+  Matcher? matcher,
+}) {
   Object? thrown;
   try {
     body();
@@ -173,6 +188,10 @@ void _expectThrowsWithMessage(
   }
 
   expect(thrown, isNotNull, reason: '$context: expected a thrown error');
+
+  if (matcher != null) {
+    expect(thrown, matcher, reason: '$context: unexpected error type');
+  }
 
   if (errorIncludes != null) {
     expect(thrown.toString(), contains(errorIncludes),
