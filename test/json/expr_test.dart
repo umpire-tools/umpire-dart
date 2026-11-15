@@ -62,6 +62,20 @@ void main() {
           pred({'planId': 'pro'}, {'validPlans': 'not-a-list'}), isFalse);
     });
 
+    test('fieldInCond does not coerce scalars and never reads an array value',
+        () {
+      final pred = compileExpr(
+        {'op': 'fieldInCond', 'field': 'planId', 'condition': 'validPlans'},
+        fieldNames: fieldNames,
+      );
+
+      expect(pred({'planId': true}, {'validPlans': [1]}), isFalse);
+      expect(pred({'planId': 1}, {'validPlans': [true]}), isFalse);
+      expect(pred({'planId': '22'}, {'validPlans': [22]}), isFalse);
+      expect(pred({'planId': 22}, {'validPlans': [22.0]}), isTrue);
+      expect(pred({'planId': [1]}, {'validPlans': [1]}), isFalse);
+    });
+
     test('condIn vs fieldInCond distinction', () {
       final condInPred = compileExpr(
         {'op': 'condIn', 'condition': 'tier', 'values': ['pro', 'team']},
@@ -276,6 +290,27 @@ void main() {
     test('throws on missing op field', () {
       expect(
         () => compileExpr({}, fieldNames: fieldNames),
+        throwsArgumentError,
+      );
+    });
+
+    test('throws when contains is missing a primitive value', () {
+      expect(
+        () => compileExpr(
+          {'op': 'contains', 'field': 'planId'},
+          fieldNames: fieldNames,
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => compileExpr(
+          {
+            'op': 'contains',
+            'field': 'planId',
+            'value': ['pro'],
+          },
+          fieldNames: fieldNames,
+        ),
         throwsArgumentError,
       );
     });

@@ -33,6 +33,9 @@ bool Function(dynamic) _compileCheck(Map<String, dynamic> check) {
   }
 }
 
+bool _isJsonPrimitive(dynamic v) =>
+    v == null || v is String || v is num || v is bool;
+
 String _validateField(Map<String, dynamic> expr, Set<String> fieldNames) {
   final field = expr['field'] as String?;
   if (field == null || !fieldNames.contains(field)) {
@@ -223,7 +226,14 @@ Predicate compileExpr(
 
     case 'contains':
       final field = _validateField(expr, fieldNames);
+      if (!expr.containsKey('value')) {
+        throw ArgumentError('contains expression missing "value" field');
+      }
       final value = expr['value'];
+      if (!_isJsonPrimitive(value)) {
+        throw ArgumentError(
+            'contains expression "value" must be a JSON primitive');
+      }
       return (values, conditions) {
         final v = values[field];
         return v is List && v.contains(value);
