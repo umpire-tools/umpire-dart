@@ -270,10 +270,6 @@ class UmpireSchema {
         );
 
       case 'disables':
-        if (jsonRule.source == null && jsonRule.when == null) {
-          throw UmpireSchemaException(
-              'disables rule requires "source" or "when"');
-        }
         if (jsonRule.targets == null || jsonRule.targets!.isEmpty) {
           throw UmpireSchemaException(
               'disables rule requires non-empty "targets"');

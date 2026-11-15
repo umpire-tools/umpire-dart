@@ -276,6 +276,12 @@ void _validateDisablesRule(
   Set<String> fieldNames,
   Map<String, String> conditionTypes,
 ) {
+  if (!rule.containsKey('source') && !rule.containsKey('when')) {
+    throw UmpireSchemaException(
+      'disables rule requires "source" or "when"',
+    );
+  }
+
   final targets = _array(rule, 'targets', 'Rule "disables"');
   for (final target in targets) {
     _assertField(target, fieldNames, 'Rule "disables"');

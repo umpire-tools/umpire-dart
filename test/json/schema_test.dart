@@ -400,6 +400,25 @@ void main() {
       );
     });
 
+    test('rejects a disables rule without source or when', () {      expect(
+        () => UmpireSchema.fromJson({
+          'version': 1,
+          'fields': {'a': <String, dynamic>{}, 'b': <String, dynamic>{}},
+          'rules': [
+            {
+              'type': 'disables',
+              'targets': ['b'],
+            },
+          ],
+        }),
+        throwsA(isA<UmpireSchemaException>().having(
+          (e) => e.message,
+          'message',
+          contains('disables rule requires "source" or "when"'),
+        )),
+      );
+    });
+
     test('parses validators map', () {
       final json = {
         'version': 1,
