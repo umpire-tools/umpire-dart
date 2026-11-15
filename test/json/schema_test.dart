@@ -391,6 +391,51 @@ void main() {
       );
     });
 
+    test('rejects a non-finite number in every primitive position', () {
+      Map<String, dynamic> withRule(Map<String, dynamic> when) => {
+            'version': 1,
+            'conditions': {
+              'tier': {'type': 'number'},
+            },
+            'fields': {
+              'score': <String, dynamic>{},
+              'note': <String, dynamic>{},
+            },
+            'rules': [
+              {'type': 'enabledWhen', 'field': 'note', 'when': when},
+            ],
+          };
+
+      final cases = <String, Map<String, dynamic>>{
+        'eq value': withRule(
+            {'op': 'eq', 'field': 'score', 'value': double.nan}),
+        'neq value': withRule(
+            {'op': 'neq', 'field': 'score', 'value': double.infinity}),
+        'condEq value': withRule(
+            {'op': 'condEq', 'condition': 'tier', 'value': double.nan}),
+        'in values': withRule({
+          'op': 'in',
+          'field': 'score',
+          'values': [1, double.nan],
+        }),
+        'field default': {
+          'version': 1,
+          'fields': {
+            'score': {'default': double.negativeInfinity},
+          },
+          'rules': <Map<String, dynamic>>[],
+        },
+      };
+
+      cases.forEach((label, doc) {
+        expect(
+          () => UmpireSchema.fromJson(doc),
+          throwsA(isA<UmpireSchemaException>()),
+          reason: label,
+        );
+      });
+    });
+
     test('rejects contains on a field declared as a non-array kind', () {
       Map<String, dynamic> schema(String fieldIsEmpty) => {
             'version': 1,
