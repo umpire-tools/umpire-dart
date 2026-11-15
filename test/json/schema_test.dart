@@ -266,6 +266,23 @@ void main() {
       expect(ump.check({'tags': ['routine']})['note']!.enabled, isFalse);
     });
 
+    test('accepts a whole-number double for minLength and maxLength', () {
+      final json = {
+        'version': 1,
+        'fields': {
+          'code': {'isEmpty': 'string'},
+        },
+        'rules': <dynamic>[],
+        'validators': {
+          'code': {'op': 'minLength', 'value': 3.0, 'error': 'Too short'},
+        },
+      };
+      final avail = UmpireSchema.fromJson(json).build().check({'code': 'ab'});
+
+      expect(avail['code']!.valid, isFalse);
+      expect(avail['code']!.error, 'Too short');
+    });
+
     test('parses validators map', () {
       final json = {
         'version': 1,
