@@ -44,9 +44,15 @@ class Umpire {
 
   /// Evaluates all rules against [values] and optional [conditions], returning
   /// per-field availability.
+  ///
+  /// [prev] is the prior value snapshot. Passing it lets [oneOf] resolve an
+  /// ambiguous branch in favour of the branch that became satisfied since the
+  /// previous snapshot. An omitted [prev] stays absent; an explicit empty map
+  /// stays an explicit empty snapshot.
   AvailabilityMap check(
     Map<String, dynamic> values, {
     Map<String, dynamic> conditions = const {},
+    Map<String, dynamic>? prev,
   }) {
     final result = eval.evaluate(
       _fields,
@@ -54,6 +60,7 @@ class Umpire {
       _topoOrder,
       values,
       conditions,
+      prev,
     );
 
     if (_validators.isNotEmpty) {
@@ -61,7 +68,7 @@ class Umpire {
         final field = entry.key;
         final validator = entry.value;
         final avail = result[field];
-        if (avail == null) continue;
+        if (avail == null || !avail.enabled) continue;
 
         final value = values[field];
         if (!isSatisfied(value, _fields[field])) continue;

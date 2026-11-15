@@ -49,6 +49,34 @@ void main() {
       expect(avail['sms']!.enabled, isTrue);
     });
 
+    test('oneOf resolves ambiguity from prev when one branch is new', () {
+      final ump = umpire(
+        fields: {
+          'phone': FieldDef(isEmpty: IsEmptyStrategy.string),
+          'signal': FieldDef(isEmpty: IsEmptyStrategy.string),
+        },
+        rules: [
+          oneOf('contact', {
+            'phone': ['phone'],
+            'signal': ['signal'],
+          }),
+        ],
+      );
+
+      final values = {'phone': 'call', 'signal': 'wave'};
+
+      final withPrev = ump.check(values, prev: {'phone': 'call'});
+      expect(withPrev['phone']!.enabled, isFalse);
+      expect(withPrev['signal']!.enabled, isTrue);
+      expect(withPrev['phone']!.reason, 'conflicts with signal strategy');
+
+      // An explicit empty snapshot leaves both branches newly satisfied, so
+      // the first one wins.
+      final emptyPrev = ump.check(values, prev: {});
+      expect(emptyPrev['phone']!.enabled, isTrue);
+      expect(emptyPrev['signal']!.enabled, isFalse);
+    });
+
     test('oneOf with empty branch should throw', () {
       expect(
         () => oneOf('group', {'empty': []}),
