@@ -274,6 +274,11 @@ void _validateDisablesRule(
   }
 
   final targets = _array(rule, 'targets', 'Rule "disables"');
+  if (targets.isEmpty) {
+    throw UmpireSchemaException(
+      'Rule "disables" must include at least one target',
+    );
+  }
   for (final target in targets) {
     _assertField(target, fieldNames, 'Rule "disables"');
   }

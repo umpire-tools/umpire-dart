@@ -545,6 +545,27 @@ void main() {
       );
     });
 
+    test('rejects a disables rule with empty targets', () {
+      expect(
+        () => UmpireSchema.fromJson({
+          'version': 1,
+          'fields': {'a': <String, dynamic>{}, 'b': <String, dynamic>{}},
+          'rules': [
+            {
+              'type': 'disables',
+              'source': 'a',
+              'targets': <String>[],
+            },
+          ],
+        }),
+        throwsA(isA<UmpireSchemaException>().having(
+          (e) => e.message,
+          'message',
+          contains('must include at least one target'),
+        )),
+      );
+    });
+
     test('rejects undeclared field references in rules, disables, and oneOf',
         () {
       void expectUnknownField(String label, Map<String, dynamic> rule) {
